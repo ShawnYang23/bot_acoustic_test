@@ -353,6 +353,14 @@ def spilt_wav_file(args):
     
 def main():
     config_file = "config.ini"
+    default_config_file = "config_default.ini"
+    # if config file not exist, use default config
+    if not os.path.exists(config_file):
+        if os.path.exists(default_config_file):
+            config_file = default_config_file
+        else:
+            print("Neither config.ini nor config_default.ini exists!")
+            return
     config = configparser.ConfigParser()
     config.read(config_file)
     parser = argparse.ArgumentParser(
