@@ -323,13 +323,19 @@ def spilt_wav_file(args):
     if not args.spilt:
         return
     print("args.spilt: ", args.spilt)
-    stdout, stderr = execute_local_command(f"ls {args.spilt} | grep mic.wav")
+    stdout, stderr = execute_local_command(f"ls {args.spilt}")
     if not stdout:
         print("File not found")
         return
-    file_dir = os.path.abspath(args.spilt) + "/"
+    #extract the file directory from the file path
+    file_dir = os.path.dirname(args.spilt) + "/"
     for file in stdout.split("\n"):
         if file.endswith(".wav"):
+            #make sure the file is a 6 channel wav file
+            command = f"soxi {file_dir + file} | grep 'Channels' | awk '{{print $2}}'"
+            stdout, stderr = execute_local_command(command)
+            if stdout.strip() != "6":
+                continue
             file_path = file_dir + file
             file_name = file.split(".")[0]
             suffix = file.split(".")[1]
