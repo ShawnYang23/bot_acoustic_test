@@ -361,30 +361,33 @@ def spilt_wav_file(args):
     if not stdout:
         print("File not found")
         return
-    # extract the file directory from the file path
-    file_dir = os.path.dirname(args.spilt) + "/"
+   
     for file in stdout.split("\n"):
         if file.endswith(".wav"):
             # make sure the file is a 6 channel wav file
-            command = f"soxi {file_dir + file} | grep 'Channels' | awk '{{print $2}}'"
+            command = f"soxi {file} | grep 'Channels' | awk '{{print $3}}'"
             stdout, stderr = execute_local_command(command)
-            if stdout.strip() != "6":
+            chn = stdout.strip()
+            if chn != "6":
+                print(f"{file} is {chn} channel wav file, not 6 channel wav file")
                 continue
-            file_path = file_dir + file
-            file_name = file.split(".")[0]
+                
+            pre_fix = file.split(".")[0]
             suffix = file.split(".")[1]
-            pre_fix = file_dir + file_name
             file_path_1 = pre_fix + "_12." + suffix
             file_path_2 = pre_fix + "_34." + suffix
             file_path_3 = pre_fix + "_56." + suffix
-            command1 = f"sox {file_path} {file_path_1} remix 1 2"
-            command2 = f"sox {file_path} {file_path_2} remix 3 4"
-            command3 = f"sox {file_path} {file_path_3} remix 5 6"
-            stdout, stderr = execute_local_command(command1)
-            stdout, stderr = execute_local_command(command2)
-            stdout, stderr = execute_local_command(command3)
-            print("spilt " + file_path + " to " + file_path_1 +
-                  " and " + file_path_2 + " and " + file_path_3)
+            command1 = f"sox {file} {file_path_1} remix 1 2"
+            command2 = f"sox {file} {file_path_2} remix 3 4"
+            command3 = f"sox {file} {file_path_3} remix 5 6"
+            for command in [command1, command2, command3]:
+                stdout, stderr = execute_local_command(command)
+                if stderr:
+                    print("spilt failed: ", stderr)
+                    return
+            
+            print("[spilt]:\n " + file + "\n[to]:\n " + file_path_1 +
+                    "\n " + file_path_2 + "\n " + file_path_3)
 
 
 def main():
@@ -415,10 +418,10 @@ def main():
         "--password", default=config["DEFAULT"]["password"], help="SSH password"
     )
     parser.add_argument(
-        "-u", "--update", action="store_false", help="Configs will be saved to config.ini file as default"
+        "-u", "--update", action="store_true", help="Configs will be saved to config.ini file as default"
     )
     parser.add_argument("-v", "--verbose",
-                        action="store_false", help="Verbose mode")
+                        action="store_true", help="Verbose mode")
     parser.add_argument(
         "-d",
         "--duration",
@@ -438,15 +441,15 @@ def main():
         help="Remote file path",
     )
 
-    parser.add_argument("--init", action="store_false",
+    parser.add_argument("--init", action="store_true",
                         help="Init system for this script")
-    parser.add_argument("--info", action="store_false", help="Show system info")
+    parser.add_argument("--info", action="store_true", help="Show system info")
     parser.add_argument("-C", "--command", required=False,
                         default="", help="Execute remote command")
     parser.add_argument("-D", "--download",
-                        action="store_false", help="Downlaod files")
+                        action="store_true", help="Downlaod files")
     parser.add_argument(
-        "-U", "--upload", action="store_false", help="Upload files")
+        "-U", "--upload", action="store_true", help="Upload files")
     parser.add_argument("-P", "--play_file", default="",
                         help="Upload file to remote /root/plays(if neccessary) and remote plays audio file")
     parser.add_argument(
@@ -461,7 +464,7 @@ def main():
         "-g", "--get", choices=["speaker", "mic"], help="Get audio input output volume")
     parser.add_argument("--value", default="50%",
                         help="Volume value, working with --set")
-    parser.add_argument("--reset", action="store_false",
+    parser.add_argument("--reset", action="store_true",
                         help="reset system to stop all audio process")
     parser.add_argument("--spilt", default="",
                         help="split 6 channel wav file to 3x2 channel files")
@@ -472,11 +475,13 @@ def main():
     args.local_path = os.path.abspath(args.local_path)
 
     # print key infos
+    print("[KEY INFOS]")
     print("local  path: ", args.local_path)
     print("remote user: ", args.username)
     print("remote host: ", args.hostname)
     print("remote path: ", args.remote_path)
-
+    
+    print("[COMMANDS]")
     # local operation
     spilt_wav_file(args)
 
