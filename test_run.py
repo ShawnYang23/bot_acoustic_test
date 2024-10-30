@@ -254,21 +254,16 @@ def exec_record_audio(ssh, args):
         print(duration + "s Recording...")
         time.sleep(int(duration))
         print("Recording Done!")
+        # convert pcm to wav
+        if args.engine == "cras":
+            args.command = f"sox -t raw -r 48000 -e signed -b 16 -c 8 {record_file_path} {record_file_path}"
+            execute_remote_command(ssh, args)
+        # download record file to local
         command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:" + \
             f"{record_file_path} {local_file_path}"
         print({"command": command})
         execute_local_command(command, args)
-        print(
-            "split 8 channel wav file to a 1-6 channel wav file and an 8 channel wav file")
-        # split 8 channel wav file to 0-5 channel wav file and 7 channel wav file
-        file_name = local_file_path.split(".")[0]
-        suffix = local_file_name.split(".")[1]
-        file_path_mic = file_name + "_mic." + suffix
-        file_path_lp = file_name + "_lp." + suffix
-        command = f"sox {local_file_path} {file_path_mic} remix 1 2 3 4 5 6"
-        execute_local_command(command, args)
-        command = f"sox {local_file_path} {file_path_lp} remix 8"
-        execute_local_command(command, args)
+        # split into mic and loopback
 
 
 def set_volume(ssh, args):
@@ -304,33 +299,63 @@ def reset_alsa_client(ssh, args):
 def spilt_wav_file(args):
     if not args.spilt:
         return
-    print("args.spilt: ", args.spilt)
+    file_path = args.spilt
+    print("spilt file: ", file_path)
     command = f"ls {args.spilt}"
     stdout = execute_local_command(command, args)
+    
+    if args.layout == "6x1":
+        # split into mic and loopback: 1-6 channel and 8 channel
+        print("split 8 channel wav file to a 1-6 channel wav file and an 8 channel wav file")
+        for file in stdout.split("\n"):
+            if file.endswith(".wav"):
+                # make sure the file is a 8 channel wav file
+                command = f"soxi {file} | grep 'Channels' | awk '{{print $3}}'"
+                stdout = execute_local_command(command, args)
+                chn = stdout.strip()
+                if chn != "8":
+                    print(f"{file} is {chn} channel wav file, not 8 channel wav file")
+                    continue
 
-    for file in stdout.split("\n"):
-        if file.endswith(".wav"):
-            # make sure the file is a 6 channel wav file
-            command = f"soxi {file} | grep 'Channels' | awk '{{print $3}}'"
-            stdout = execute_local_command(command, args)
-            chn = stdout.strip()
-            if chn != "6":
-                print(f"{file} is {chn} channel wav file, not 6 channel wav file")
-                continue
+                pre_fix = file.split(".")[0]
+                suffix = file.split(".")[1]
+                file_path_mic = pre_fix + "_mic." + suffix
+                file_path_lp = pre_fix + "_lp." + suffix
+                command1 = f"sox {file} {file_path_mic} remix 1 2 3 4 5 6"
+                command2 = f"sox {file} {file_path_lp} remix 8"
+                for command in [command1, command2]:
+                    execute_local_command(command, args)
 
-            pre_fix = file.split(".")[0]
-            suffix = file.split(".")[1]
-            file_path_1 = pre_fix + "_12." + suffix
-            file_path_2 = pre_fix + "_34." + suffix
-            file_path_3 = pre_fix + "_56." + suffix
-            command1 = f"sox {file} {file_path_1} remix 1 2"
-            command2 = f"sox {file} {file_path_2} remix 3 4"
-            command3 = f"sox {file} {file_path_3} remix 5 6"
-            for command in [command1, command2, command3]:
-                execute_local_command(command, args)
+                print("[spilt]:\n " + file + "\n[to]:\n " + file_path_mic +
+                    "\n " + file_path_lp)
+    elif args.layout == "3x2":
+        # split 6 channel wav file to 3x2 channel wav files
+        print("split 6 channel wav file to 3x2 channel wav files")
+        for file in stdout.split("\n"):
+            if file.endswith(".wav"):
+                # make sure the file is a 6 channel wav file
+                command = f"soxi {file} | grep 'Channels' | awk '{{print $3}}'"
+                stdout = execute_local_command(command, args)
+                chn = stdout.strip()
+                if chn != "6":
+                    print(f"{file} is {chn} channel wav file, not 6 channel wav file")
+                    continue
 
-            print("[spilt]:\n " + file + "\n[to]:\n " + file_path_1 +
-                  "\n " + file_path_2 + "\n " + file_path_3)
+                pre_fix = file.split(".")[0]
+                suffix = file.split(".")[1]
+                file_path_1 = pre_fix + "_12." + suffix
+                file_path_2 = pre_fix + "_34." + suffix
+                file_path_3 = pre_fix + "_56." + suffix
+                command1 = f"sox {file} {file_path_1} remix 1 2"
+                command2 = f"sox {file} {file_path_2} remix 3 4"
+                command3 = f"sox {file} {file_path_3} remix 5 6"
+                for command in [command1, command2, command3]:
+                    execute_local_command(command, args)
+
+                print("[spilt]:\n " + file + "\n[to]:\n " + file_path_1 +
+                    "\n " + file_path_2 + "\n " + file_path_3)
+    else:
+        print("layout not supported")
 
 
 def main():
@@ -411,6 +436,8 @@ def main():
                         help="Volume value, working with --set")
     parser.add_argument("--reset", action="store_true",
                         help="reset system to stop all audio process")
+    parser.add_argument("--layout", choices=["6x1", "3x2"], default="6x1",
+                        help="spilt 6 channel wav file to 6x1 or 3x2 channel files")
     parser.add_argument("--spilt", default="",
                         help="split 6 channel wav file to 3x2 channel files")
     args = parser.parse_args()
