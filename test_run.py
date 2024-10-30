@@ -301,6 +301,13 @@ def exec_record_audio(ssh, args):
         command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {local_file_path}"
         print({"command": command})
         execute_local_command(command, args)
+        #if cras engine, download src file too
+        if args.engine == "cras":
+            src_file_path = "/dev/shm/record_48k_src.wav"
+            prefix = local_file_path.split(".")[0]
+            local_src_file_path = prefix + "_src.wav"
+            command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:{src_file_path} {local_src_file_path}"
+            execute_local_command(command, args)
         # split into mic and loopback
 
 
