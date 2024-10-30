@@ -5,6 +5,7 @@ import subprocess
 import os
 import time
 import configparser
+import sys
 
 
 def ssh_connect(hostname, port, username, password):
@@ -20,21 +21,29 @@ def ssh_connect(hostname, port, username, password):
         return None
 
 
-def execute_remote_command(ssh, args):
+def execute_remote_command(ssh, args, fatal=True):
     if not args.command:
         return None, None
     """执行远程命令"""
     try:
         stdin, stdout, stderr = ssh.exec_command(args.command)
+        stdout_text = stdout.read().decode()
+
         if not args.verbose:
             print(f"{args.remote_path} #: {args.command}")
-            print(f"{stdout.read().decode()}")
+            print(stdout_text)
+
+        # Clear the command to prevent it from being executed again
         args.command = ""
-        return stdout, stderr
+        return stdout_text
+
     except Exception as e:
         print(f"{args.remote_path} #: {args.command}")
-        print(f"命令执行失败:\n{e}")
-        return e.stdout, e.stderr
+        print(f"命令执行失败:\n{str(e)}")
+        if fatal:
+            print("fatal error, exit")
+            sys.exit(1)
+        return str(e)
 
 
 def execute_local_command(command):
@@ -64,8 +73,8 @@ def execute_scp_command(ssh, args):
     if args.download:
         if "*" in args.remote_path:
             args.command = f"ls {args.remote_path}"
-            stdout, stderr = execute_remote_command(ssh, args)
-            for file in stdout.read().decode().split("\n"):
+            text = execute_remote_command(ssh, args)
+            for file in text.split("\n"):
                 if file:
                     command = f"sshpass -p {args.password} scp -r " + \
                               f"{args.username}@{args.hostname}:{file}" + \
@@ -125,16 +134,6 @@ def execute_scp_command(ssh, args):
                 print(f"Upload failed: {stderr}")
 
 
-def execute_command_and_check(ssh, args, error_message):
-    """Execute a command on a remote system and check for errors."""
-    stdout, stderr = execute_remote_command(ssh, args)
-
-    stderr = stderr.read().decode()
-    if stderr.strip():
-        # Log the error message and details from stderr
-        print(f"Error: {error_message}\nDetails: {stderr.strip()}")
-        return False
-    return True
 
 
 def system_prepare(ssh, args):
@@ -142,32 +141,19 @@ def system_prepare(ssh, args):
         return True
     # Check if the root directory is writable and remount if necessary
     args.command = "mount | grep ' / ' | grep rw || mount -o remount,rw /"
-    if not execute_command_and_check(
-        ssh, args,
-        "Failed to ensure root directory is writable",
-    ):
-        return False
+    execute_remote_command(ssh, args)
     print("[init]: Remote root directory is writable")
     # Ensure the necessary directories and files exist in the remote system
     args.command = "mkdir -p /root/plays /root/records"
-    if not execute_command_and_check(
-        ssh, args,
-        "Failed to create necessary directories /root/plays or /root/records",
-    ):
-        return False
+    execute_remote_command(ssh, args)
     print("[init]: Remote directories are created")
     # Ensure the necessary directories or files exist in the local system
     if not os.path.exists("./config.ini"):
         execute_local_command("cp ./config_default.ini ./config.ini")
     print("[init]: Local config file is prepared")
     # Copy the test audio files to the remote system
-    command = f"sshpass -p {args.password} scp -r ./plays {args.username}@{args.hostname}:/root/"
-    stdout, stderr = execute_local_command(command)
-    if stderr.strip():
-        print(
-            f"Error: Failed to copy test audio files to remote system\nDetails: {stderr.strip()}"
-        )
-        return False
+    args.command = f"sshpass -p {args.password} scp -r ./plays {args.username}@{args.hostname}:/root/"
+    execute_remote_command(ssh, args)
     print("[init]: Remote test audio files are prepared")
     # Restart alsa service
     reset_alsa_client(ssh, args)
@@ -196,8 +182,9 @@ def dump_info(ssh, args):
     # remote file info
     print("[Remote file info]")
     args.command = f"tree --noreport {args.remote_path}"
-    stdout, stderr = execute_remote_command(ssh, args)
-    print(stdout.read().decode())
+    text = execute_remote_command(ssh, args)
+    
+    print(text)
     print("info done!")
 
 
@@ -229,17 +216,16 @@ def update_config(args):
     print("配置文件已更新")
 
 
-def cras_play_audio(ssh, args):
+def exec_play_audio(ssh, args):
     if args.play_file:
         play_file_path = args.play_file
         remote_file_path = ""
         remote_store_path = "/root/plays/"
-        # check remote
+        # check remote file exist
         args.command = f"ls {play_file_path}"
-        stdout, stderr = execute_remote_command(ssh, args)
-        stdout = stdout.read().decode().strip()
-        if not stdout:
-            # check local
+        text = execute_remote_command(ssh, args)
+        if text.strip() == "":
+            # if remote file not found, check local
             if not os.path.exists(play_file_path):
                 print("File not found in both local and remote,"
                       "please check the file path")
@@ -261,20 +247,19 @@ def cras_play_audio(ssh, args):
         # play audio
         # get audio file duration
         args.command = f"sox --i -D {play_file_path}"
-        stdout, stderr = execute_remote_command(ssh, args)
-        stdout_text = stdout.read().decode().strip()
-        if not stdout_text:
-            print("get duration failed")
-        duration = stdout_text.split(".")[0]
+        text = execute_remote_command(ssh, args)
+        duration = text.strip().split(".")[0]
         # delay before playing audio
         time.sleep(1)
         print("Playing " + play_file_path + " for " + duration + "s")
-        args.command = f"cras_test_client  --playback_file {play_file_path}"
+        args.command = f"cras_test_client  --playback_file {play_file_path} --duration_seconds {duration}"
+        if args.engine == "alsa":
+            args.command = f"aplay {play_file_path}"
         execute_remote_command(ssh, args)
         time.sleep(int(duration))
 
 
-def alsa_record_audio(ssh, args):
+def exec_record_audio(ssh, args):
     if args.record_file:
         local_file_path = args.record_file
         local_file_name = os.path.basename(local_file_path)
@@ -282,6 +267,8 @@ def alsa_record_audio(ssh, args):
         duration = args.duration
         args.command = "arecord -D hw:2,0 -f S16_LE -r 48000 -c 8 -t wav -d " + \
             duration + " > " + record_file_path
+        if args.engine == "cras":
+            args.command = f"cras_test_client --capture_file {record_file_path} --duration_seconds {duration}"
         execute_remote_command(ssh, args)
         print(duration + "s Recording...")
         time.sleep(int(duration))
@@ -310,14 +297,8 @@ def set_volume(ssh, args):
         args.command = f"amixer set 'Master' {args.value} | grep Mono | awk '{{print $4}}' | sed 's/[^0-9]*//g'"
     elif args.set == "mic":
         args.command = f"amixer set 'Capture' {args.value}"
-    stdout, stderr = execute_remote_command(ssh, args)
-    stdout = stdout.read().decode().strip()
-    stderr = stderr.read().decode().strip()
-    if stdout:
-        print(f"Set {args.set} volume to {stdout} done!")
-    else:
-        print("stderr: ", stderr)
-        print(f"Set {args.set} volume to {args.value} failed!")
+    text = execute_remote_command(ssh, args)
+    print(f"Set {args.set} volume to {text.strip()} done!")
 
 
 def get_volume(ssh, args):
@@ -327,15 +308,8 @@ def get_volume(ssh, args):
         args.command = f"amixer get 'Master' | grep Mono | awk '{{print $4}}' | sed 's/[^0-9]*//g'"
     elif args.get == "mic":
         args.command = f"amixer get 'Capture'"
-    stdout, stderr = execute_remote_command(ssh, args)
-    stdout = stdout.read().decode().strip()
-    stderr = stderr.read().decode().strip()
-    if stdout:
-        print(f"{args.get} volume is: ")
-        print(stdout)
-    else:
-        print("stderr: ", stderr)
-        print(f"Get {args.get} volume failed!")
+    text = execute_remote_command(ssh, args)
+    print(f"{args.get} volume is: {text.strip()}")
 
 
 def reset_alsa_client(ssh, args):
@@ -343,15 +317,7 @@ def reset_alsa_client(ssh, args):
         return
     args.command = f"ps -aux | grep 'arecord\|aplay\|cras_test_client\|scp' " + \
         f"| grep -v grep | awk '{{print $2}}' | xargs kill -9"
-    stdout, stderr = execute_remote_command(ssh, args)
-    stdout = stdout.read().decode().strip()
-    stderr = stderr.read().decode().strip()
-    if not stdout:
-        print("System reset done!")
-    else:
-        print("stderr: ", stderr)
-        print("System reset failed!")
-
+    execute_remote_command(ssh, args)
 
 def spilt_wav_file(args):
     if not args.spilt:
@@ -361,7 +327,7 @@ def spilt_wav_file(args):
     if not stdout:
         print("File not found")
         return
-   
+
     for file in stdout.split("\n"):
         if file.endswith(".wav"):
             # make sure the file is a 6 channel wav file
@@ -371,7 +337,7 @@ def spilt_wav_file(args):
             if chn != "6":
                 print(f"{file} is {chn} channel wav file, not 6 channel wav file")
                 continue
-                
+
             pre_fix = file.split(".")[0]
             suffix = file.split(".")[1]
             file_path_1 = pre_fix + "_12." + suffix
@@ -385,9 +351,9 @@ def spilt_wav_file(args):
                 if stderr:
                     print("spilt failed: ", stderr)
                     return
-            
+
             print("[spilt]:\n " + file + "\n[to]:\n " + file_path_1 +
-                    "\n " + file_path_2 + "\n " + file_path_3)
+                  "\n " + file_path_2 + "\n " + file_path_3)
 
 
 def main():
@@ -421,7 +387,9 @@ def main():
         "-u", "--update", action="store_true", help="Configs will be saved to config.ini file as default"
     )
     parser.add_argument("-v", "--verbose",
-                        action="store_true", help="Verbose mode")
+                        action="store_false", help="Verbose mode")
+    parser.add_argument(
+        "--engine", choices=["alsa", "cras"], default="cras", help="audio engine: alsa or cras")
     parser.add_argument(
         "-d",
         "--duration",
@@ -480,7 +448,7 @@ def main():
     print("remote user: ", args.username)
     print("remote host: ", args.hostname)
     print("remote path: ", args.remote_path)
-    
+
     print("[COMMANDS]")
     # local operation
     spilt_wav_file(args)
@@ -500,8 +468,8 @@ def main():
         set_volume(ssh, args)
         get_volume(ssh, args)
         execute_scp_command(ssh, args)
-        cras_play_audio(ssh, args)
-        alsa_record_audio(ssh, args)
+        exec_play_audio(ssh, args)
+        exec_record_audio(ssh, args)
         # 关闭SSH连接
         ssh.close()
     else:
