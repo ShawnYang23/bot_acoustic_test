@@ -7,7 +7,7 @@ import time
 import configparser
 import sys
 import signal
-
+import threading
 
 def ssh_connect(hostname, port, username, password):
     """建立SSH连接"""
@@ -23,8 +23,6 @@ def ssh_connect(hostname, port, username, password):
 
 
 def execute_remote_command(ssh, args, fatal=True):
-    if not args.command:
-        return None, None
     """执行远程命令"""
     try:
         stdin, stdout, stderr = ssh.exec_command(args.command)
@@ -222,94 +220,120 @@ def update_config(args):
 
 
 def exec_play_audio(ssh, args):
-    if args.play_file:
-        play_file_path = args.play_file
-        remote_file_path = ""
-        remote_store_path = "/root/plays/"
-        # check remote file exist
-        args.command = f"ls {play_file_path}"
-        stdout = execute_remote_command(ssh, args)
-        if stdout == "":
-            # if remote file not found, check local
-            if not os.path.exists(play_file_path):
-                print("File not found in both local and remote,"
-                      "please check the file path")
-                return
-            else:
-                # rsync plays file to remote
-                print("Uploading " + play_file_path +
-                      " to remote folder " + remote_store_path)
-                local_play_file_path = args.play_file
-                upload_command = f"sshpass -p {args.password} rsync -avz {local_play_file_path} " + \
-                                 f"{args.username}@{args.hostname}:{remote_store_path}"
-                execute_local_command(upload_command, args)
-                time.sleep(1)
-                play_file_path = remote_store_path + \
-                    os.path.basename(local_play_file_path)
+    play_file_path = args.play_file
+    remote_file_path = ""
+    remote_store_path = "/root/plays/"
+    # check remote file exist
+    args.command = f"ls {play_file_path}"
+    stdout = execute_remote_command(ssh, args)
+    if stdout == "":
+        # if remote file not found, check local
+        if not os.path.exists(play_file_path):
+            print("File not found in both local and remote,"
+                    "please check the file path")
+            return
         else:
-            pass
+            # rsync plays file to remote
+            print("Uploading " + play_file_path +
+                    " to remote folder " + remote_store_path)
+            local_play_file_path = args.play_file
+            upload_command = f"sshpass -p {args.password} rsync -avz {local_play_file_path} " + \
+                                f"{args.username}@{args.hostname}:{remote_store_path}"
+            execute_local_command(upload_command, args)
+            time.sleep(1)
+            play_file_path = remote_store_path + \
+                os.path.basename(local_play_file_path)
+    else:
+        pass
 
-        # play audio
-        # get audio file duration
-        args.command = f"sox --i -D {play_file_path}"
-        stdout = execute_remote_command(ssh, args)
-        duration = stdout.split(".")[0]
-        # delay before playing audio
-        time.sleep(1)
-        print("Playing " + play_file_path + " for " + duration + "s")
-        if args.engine == "cras":
-            if args.value == "0":
-                args.value = get_sys_speaker_volume(ssh, args)
-            args.command = f"cras_test_client  --playback_file {play_file_path} --duration_seconds {duration} --volume {args.value}"
-        else:
-            args.command = f"aplay {play_file_path}"
-        execute_remote_command(ssh, args)
-        time.sleep(int(duration))
+    # play audio
+    # get audio file duration
+    args.command = f"sox --i -D {play_file_path}"
+    stdout = execute_remote_command(ssh, args)
+    duration = stdout.split(".")[0]
+    print("Playing " + play_file_path + " for " + duration + "s")
+    if args.engine == "cras":
+        if args.value == "0":
+            args.value = get_sys_speaker_volume(ssh, args)
+        args.command = f"cras_test_client  --playback_file {play_file_path} --duration_seconds {duration} --volume {args.value}"
+    else:
+        args.command = f"aplay {play_file_path}"
+    execute_remote_command(ssh, args)
+    print("Playing Done!")
+    time.sleep(int(duration))
+    args.play_file = ""
 
 
 def exec_record_audio(ssh, args):
-    if args.record_file:
-        local_file_path = args.record_file
-        local_file_name = os.path.basename(local_file_path)
-        file_type = local_file_name.split(".")[1]
-        if file_type != "wav" and file_type != "pcm" and file_type != "raw":
-            print("Only support wav/pcm(raw)file, pls check the file suffix")
-            return
-        if file_type == "pcm":
-            file_type = "raw"
-        remote_dir = "/root/records/"
-        remote_file_path = remote_dir + local_file_name
-        duration = args.duration
-        if args.engine == "cras":
-            if args.value == "0":
-                args.value = get_sys_mic_gain(ssh, args)
-            args.command = f"cras_test_client --capture_file {remote_file_path} --duration_seconds {duration} --num_channels 2 --capture_gain {args.value}"
-        else:
-            args.command = f"arecord -D hw:2,0 -f S16_LE -r 48000 -c 8 -t {file_type} -d {duration} > {remote_file_path}"
-        # record audio
+    local_file_path = args.record_file
+    local_file_name = os.path.basename(local_file_path)
+    file_type = local_file_name.split(".")[1]
+    if file_type != "wav" and file_type != "pcm" and file_type != "raw":
+        print("Only support wav/pcm(raw)file, pls check the file suffix")
+        return
+    if file_type == "pcm":
+        file_type = "raw"
+    remote_dir = "/root/records/"
+    remote_file_path = remote_dir + local_file_name
+    duration = args.duration
+    if args.engine == "cras":
+        if args.value == "0":
+            args.value = get_sys_mic_gain(ssh, args)
+        args.command = f"cras_test_client --capture_file {remote_file_path} --duration_seconds {duration} --num_channels 2 --capture_gain {args.value}"
+    else:
+        args.command = f"arecord -D hw:2,0 -f S16_LE -r 48000 -c 8 -t wav -d {duration} > {remote_file_path}"
+    # record audio
+    print(duration + "s Recording...")
+    execute_remote_command(ssh, args)
+    print("Recording Done!")
+    # convert pcm to wav
+    if args.engine == "cras" and file_type == "wav":
+        args.command = f"sox -t raw -r 48000 -e signed -b 16 -c 2 {remote_file_path} /tmp/{local_file_name}"
         execute_remote_command(ssh, args)
-        print(duration + "s Recording...")
-        time.sleep(int(duration))
-        print("Recording Done!")
-        # convert pcm to wav
-        if args.engine == "cras" and file_type == "wav":
-            args.command = f"sox -t raw -r 48000 -e signed -b 16 -c 2 {remote_file_path} /tmp/{local_file_name}"
-            execute_remote_command(ssh, args)
-            args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
-            execute_remote_command(ssh, args)
-        # download record file to local
-        command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {local_file_path}"
-        print({"command": command})
+        args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
+        execute_remote_command(ssh, args)
+    # download record file to local
+    command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {local_file_path}"
+    print({"command": command})
+    execute_local_command(command, args)
+    #if cras engine, download src file too
+    if args.engine == "cras":
+        src_file_path = "/dev/shm/record_48k_src.wav"
+        prefix = local_file_path.split(".")[0]
+        local_src_file_path = prefix + "_src.wav"
+        command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:{src_file_path} {local_src_file_path}"
         execute_local_command(command, args)
-        #if cras engine, download src file too
-        if args.engine == "cras":
-            src_file_path = "/dev/shm/record_48k_src.wav"
-            prefix = local_file_path.split(".")[0]
-            local_src_file_path = prefix + "_src.wav"
-            command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:{src_file_path} {local_src_file_path}"
-            execute_local_command(command, args)
-        # split into mic and loopback
+    args.record_file = ""
 
+def doa_analysis(ssh, args):
+    #clear remote log file
+    args.command = f"echo "" > /var/log/messages"
+    execute_remote_command(ssh, args)
+    #play local audio and record remote audio concurrently
+    audio_path = "./doa/shawn_voice_10s.wav"
+    command = f"aplay {audio_path}"
+    thread_play = threading.Thread(target=execute_local_command, args=(command, args))
+    #Record remote audio
+    args.command = f"cras_test_client --capture_file /tmp/tmp.pcm --duration_seconds {args.duration} --num_channels 2 --capture_gain 20"
+    thread_record = threading.Thread(target=execute_remote_command, args=(ssh, args))
+    thread_record.start()
+    thread_play.start()
+    thread_record.join()
+    thread_play.join()
+    #download log file
+    command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:/var/log/messages /tmp/messages"
+    execute_local_command(command, args)
+    #parse doa info and save to file
+    doa_angle_file = f"./doa/{args.doa_analysis}.txt"
+    command = f"cat /tmp/messages | grep '\[SSL\]' | awk '{{print $6}}' > {doa_angle_file}"
+    execute_local_command(command, args)
+    command = f"cat {doa_angle_file} | sort | uniq -c | sort -nr"
+    print(execute_local_command(command, args))
+    #download doa audio file
+    doa_auido_file = f"./doa/{args.doa_analysis}_src.wav"
+    command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:/dev/shm/record_48k_src.wav {doa_auido_file}"
+    execute_local_command(command, args)
+    args.doa_analysis = ""
 
 def set_volume(ssh, args):
     if not args.set:
@@ -350,15 +374,11 @@ def get_value(ssh, args):
 
 
 def reset_alsa_client(ssh, args):
-    if not args.reset:
-        return
     args.command = f"pkill -f 'arecord|aplay|cras_test_client|scp'"
     execute_remote_command(ssh, args)
 
 
 def spilt_wav_file(args):
-    if not args.spilt:
-        return
     file_path = args.spilt
     print("spilt file: ", file_path)
     command = f"ls {args.spilt}"
@@ -419,6 +439,7 @@ def spilt_wav_file(args):
                       "\n " + file_path_2 + "\n " + file_path_3)
     else:
         print("layout not supported")
+    args.spilt = ""
 
 
 def create_signal_handler(args):
@@ -519,6 +540,7 @@ def main():
                         help="spilt 6 channel wav file to 6x1 or 3x2 channel files")
     parser.add_argument("--spilt", default="",
                         help="split 6 channel wav file to 3x2 channel files")
+    parser.add_argument("--doa_analysis", default="", help="doa analysis")
     args = parser.parse_args()
 
     # signal handler
@@ -536,27 +558,38 @@ def main():
     print("(remote path): ", args.remote_path)
 
     print("[COMMANDS]")
-    # local operation
-    spilt_wav_file(args)
 
-    # remote operation
     args.ssh = ssh_connect(args.hostname, args.port,
                            args.username, args.password)
     ssh = args.ssh
     if ssh:
-        # 准备系统
+        # prepare system
         system_prepare(ssh, args)
-        # 显示系统信息
+        # display key info
         dump_info(ssh, args)
-        # 执行命令
-        execute_remote_command(ssh, args)
-        reset_alsa_client(ssh, args)
+        # execute setting command
         set_volume(ssh, args)
         get_value(ssh, args)
-        execute_scp_command(ssh, args)
-        exec_record_audio(ssh, args)
-        exec_play_audio(ssh, args)
-        # 关闭SSH连接
+        # execute special command
+        if args.reset:
+            reset_alsa_client(ssh, args)
+        elif args.command:
+           execute_remote_command(ssh, args)
+        elif args.doa_analysis:
+            doa_analysis(ssh, args)
+            print("doa analysis done!")
+        elif args.spilt:
+            spilt_wav_file(args)
+        elif args.play_file:
+            exec_play_audio(ssh, args)
+        elif args.record_file:
+            exec_record_audio(ssh, args)
+        elif args.download or args.upload:
+            execute_scp_command(ssh, args)
+        else:
+            pass
+        
+        # close ssh connection
         ssh.close()
     else:
         print("SSH connection failed")
