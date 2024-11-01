@@ -260,7 +260,6 @@ def exec_play_audio(ssh, args):
         args.command = f"aplay {play_file_path}"
     execute_remote_command(ssh, args)
     print("Playing Done!")
-    time.sleep(int(duration))
     args.play_file = ""
 
 
