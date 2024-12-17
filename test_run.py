@@ -83,7 +83,7 @@ def execute_scp_command(ssh, args):
                 if file:
                     command = f"sshpass -p {args.password} scp -r " + \
                               f"{args.username}@{args.hostname}:{file}" + \
-                              f"{args.local_path}"
+                              f" {args.local_path}"
                     execute_local_command(command, args)
             print(
                 f"Download: \n[remote]: {args.remote_path}\n-->\n[local]: {args.local_path}")
