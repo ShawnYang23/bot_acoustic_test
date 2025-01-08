@@ -280,7 +280,7 @@ def exec_record_audio(ssh, args):
             args.value = get_sys_mic_gain(ssh, args)
         args.command = f"cras_test_client --capture_file {remote_file_path} --duration_seconds {duration} --num_channels 2 --capture_gain {args.value}"
     else:
-        args.command = f"arecord -D hw:2,0 -f S16_LE -r 48000 -c 8 -t wav -d {duration} > {remote_file_path}"
+        args.command = f"arecord -D hw:3,0 -f S16_LE -r 48000 -c 8 -t wav -d {duration} > {remote_file_path}"
     # record audio
     print(duration + "s Recording...")
     execute_remote_command(ssh, args)
