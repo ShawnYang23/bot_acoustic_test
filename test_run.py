@@ -8,6 +8,10 @@ import configparser
 import sys
 import signal
 import threading
+import re
+
+cras_output_devices = []
+cras_input_devices = []
 
 def ssh_connect(hostname, port, username, password):
     """建立SSH连接"""
@@ -186,8 +190,45 @@ def dump_info(ssh, args):
     print("[Remote file info]")
     args.command = f"tree --noreport {args.remote_path}"
     stdout = execute_remote_command(ssh, args)
+    print("[Remote device info]")
+    args.command = f"aplay -l | grep card"
+    alsa_out = execute_remote_command(ssh, args)
+    args.command = f"arecord -l | grep card"
+    alsa_in = execute_remote_command(ssh, args)
+    print("[Remote cras device info]")
+    args.command = f"cras_test_client"
+    cras_stdout = execute_remote_command(ssh, args)
+    # print(cras_stdout)
+    output_device_pattern = re.compile(
+        r"Output Devices:\n([\s\S]+?)\n\n", re.MULTILINE)
+    input_device_pattern = re.compile(
+        r"Input Devices:\n([\s\S]+?)\n\n", re.MULTILINE)
+    device_info_pattern = re.compile(r"(\d+)\s+(\d+)\s+\S+\s+(.*)")
+    output_devices_block = output_device_pattern.search(cras_stdout)
+    input_devices_block = input_device_pattern.search(cras_stdout)
 
-    print(stdout)
+    def parse_devices(device_block):
+        devices = []
+        if device_block:
+            for match in device_info_pattern.finditer(device_block.group(1)):
+                device_id = int(match.group(1))
+                max_channels = int(match.group(2))
+                name = match.group(3)
+                devices.append(
+                    {"ID": device_id, "Max Channels": max_channels, "Name": name})
+        return devices
+
+    cras_output_devices = parse_devices(output_devices_block)
+    cras_input_devices = parse_devices(input_devices_block)
+    print("Output Devices:")
+    for device in cras_output_devices:
+        print(
+            f"  ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
+
+    print("\nInput Devices:")
+    for device in cras_input_devices:
+        print(
+            f"  ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
     print("info done!")
 
 
@@ -230,15 +271,15 @@ def exec_play_audio(ssh, args):
         # if remote file not found, check local
         if not os.path.exists(play_file_path):
             print("File not found in both local and remote,"
-                    "please check the file path")
+                  "please check the file path")
             return
         else:
             # rsync plays file to remote
             print("Uploading " + play_file_path +
-                    " to remote folder " + remote_store_path)
+                  " to remote folder " + remote_store_path)
             local_play_file_path = args.play_file
             upload_command = f"sshpass -p {args.password} rsync -avz {local_play_file_path} " + \
-                                f"{args.username}@{args.hostname}:{remote_store_path}"
+                f"{args.username}@{args.hostname}:{remote_store_path}"
             execute_local_command(upload_command, args)
             time.sleep(1)
             play_file_path = remote_store_path + \
@@ -248,16 +289,35 @@ def exec_play_audio(ssh, args):
 
     # play audio
     # get audio file duration
-    args.command = f"sox --i -D {play_file_path}"
+    args.command = f"sox --i -T {play_file_path}"
     stdout = execute_remote_command(ssh, args)
-    duration = stdout.split(".")[0]
-    print("Playing " + play_file_path + " for " + duration + "s")
+    channels_pattern = r"Channels\s+:\s+(\d+)"
+    sample_rate_pattern = r"Sample Rate\s+:\s+(\d+)"
+    duration_pattern = r"Duration\s+:\s+([\d:.]+)"
+    channels = int(re.search(channels_pattern, stdout).group(1))
+    rate = int(re.search(sample_rate_pattern, stdout).group(1))
+    duration = re.search(duration_pattern, stdout).group(1)
+    hh, mm, ss = map(float, duration.split(':'))
+    duration_sec = hh * 3600 + mm * 60 + ss
+    print("Playing " + play_file_path + " duration: " +
+          str(duration_sec) + "s", "channels: ", channels, "rate: ", rate)
     if args.engine == "cras":
+        # select_output = "15:0"  # eMeet
+        # select_output = "11:0"  # owl
+        # select_output = "17:0"  # Jabra
+        select_output = "13:0"  # standard speaker
+        # select_output = "7:0"  # bot
         if args.value == "0":
             args.value = get_sys_speaker_volume(ssh, args)
-        args.command = f"cras_test_client  --playback_file {play_file_path} --duration_seconds {duration} --volume {args.value}"
+        args.command = f"cras_test_client --select_output {select_output} --playback_file {play_file_path} " \
+                       f"--rate {rate} --num_channels {channels} --duration_seconds {duration_sec} --volume {args.value}"
     else:
-        args.command = f"aplay {play_file_path}"
+        # spk_device = "hw:2,0"  # Bot
+        # spk_device = "hw:3,0"  # Owl
+        spk_device = "hw:5,0"  # sd speaker
+        # spk_device = "hw:6,0"  # eMeet
+        # spk_device = "hw:7,0"  # Jabra
+        args.command = f"aplay  -D {spk_device} {play_file_path}"
     execute_remote_command(ssh, args)
     print("Playing Done!")
     args.play_file = ""
@@ -275,19 +335,31 @@ def exec_record_audio(ssh, args):
     remote_dir = "/root/records/"
     remote_file_path = remote_dir + local_file_name
     duration = args.duration
+    rate = 48000
+    chns = 2
     if args.engine == "cras":
+        # select_input = "16:0"  # eMeet
+        select_input = "12:0"  # owl
+        # select_input = "18:0"  # Jabra
+        # select_input = "10:0"  # Bot
         if args.value == "0":
             args.value = get_sys_mic_gain(ssh, args)
-        args.command = f"cras_test_client --capture_file {remote_file_path} --duration_seconds {duration} --num_channels 2 --capture_gain {args.value}"
+        args.command = f"cras_test_client --select_input {select_input} --capture_file {remote_file_path} " \
+                       f"--duration_seconds {duration} --rate {rate} --num_channels {chns} --capture_gain {args.value}"
     else:
-        args.command = f"arecord -D hw:3,0 -f S16_LE -r 48000 -c 8 -t wav -d {duration} > {remote_file_path}"
+        # mic_device = "hw:4,0"  # Bot
+        # mic_device = "hw:7,0"  # Jabra
+        mic_device = "hw:3,0"  # Owl
+        # mic_device = "hw:6,0"  # eMeet
+        args.command = f"arecord -D {mic_device} -f S16_LE " \
+                       f"-r {rate} -c {chns} -t wav -d {duration} > {remote_file_path}"
     # record audio
     print(duration + "s Recording...")
     execute_remote_command(ssh, args)
     print("Recording Done!")
     # convert pcm to wav
     if args.engine == "cras" and file_type == "wav":
-        args.command = f"sox -t raw -r 48000 -e signed -b 16 -c 2 {remote_file_path} /tmp/{local_file_name}"
+        args.command = f"sox -t raw -r {rate} -e signed -b 16 -c {chns} {remote_file_path} /tmp/{local_file_name}"
         execute_remote_command(ssh, args)
         args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
         execute_remote_command(ssh, args)
@@ -295,44 +367,51 @@ def exec_record_audio(ssh, args):
     command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {local_file_path}"
     print({"command": command})
     execute_local_command(command, args)
-    #if cras engine, download src file too
-    if args.engine == "cras":
-        src_file_path = "/dev/shm/record_48k_src.wav"
-        prefix = local_file_path.split(".")[0]
-        local_src_file_path = prefix + "_src.wav"
-        command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:{src_file_path} {local_src_file_path}"
-        execute_local_command(command, args)
+    # if cras engine, download src file too
+    # if args.engine == "cras":
+    #     src_file_path = "/dev/shm/record_16k_src.wav"
+    #     prefix = local_file_path.split(".")[0]
+    #     local_src_file_path = prefix + "_src.wav"
+    #     command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:{src_file_path} {local_src_file_path}"
+    #     execute_local_command(command, args)
     args.record_file = ""
 
+
 def doa_analysis(ssh, args):
-    #clear remote log file
+    # clear remote log file
     args.command = f"echo "" > /var/log/messages"
     execute_remote_command(ssh, args)
-    #play local audio and record remote audio concurrently
+    # play local audio and record remote audio concurrently
     audio_path = "./doa/shawn_voice_10s.wav"
-    command = f"aplay {audio_path}"
-    thread_play = threading.Thread(target=execute_local_command, args=(command, args))
-    #Record remote audio
+    # speaker_device = "hw:3,0" # owl
+    # speaker_device = "hw:2,0" # bot
+    speaker_device = "hw:5,0"  # standard speaker
+    command = f"aplay -D {speaker_device} {audio_path}"
+    thread_play = threading.Thread(
+        target=execute_local_command, args=(command, args))
+    # Record remote audio
     args.command = f"cras_test_client --capture_file /tmp/tmp.pcm --duration_seconds {args.duration} --num_channels 2 --capture_gain 20"
-    thread_record = threading.Thread(target=execute_remote_command, args=(ssh, args))
+    thread_record = threading.Thread(
+        target=execute_remote_command, args=(ssh, args))
     thread_record.start()
     thread_play.start()
     thread_record.join()
     thread_play.join()
-    #download log file
+    # download log file
     command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:/var/log/messages /tmp/messages"
     execute_local_command(command, args)
-    #parse doa info and save to file
+    # parse doa info and save to file
     doa_angle_file = f"./doa/{args.doa_analysis}.txt"
     command = f"cat /tmp/messages | grep '\[SSL\]' | awk '{{print $6}}' > {doa_angle_file}"
     execute_local_command(command, args)
     command = f"cat {doa_angle_file} | sort | uniq -c | sort -nr"
     print(execute_local_command(command, args))
-    #download doa audio file
+    # download doa audio file
     doa_auido_file = f"./doa/{args.doa_analysis}_src.wav"
     command = f"sshpass -p {args.password} scp {args.username}@{args.hostname}:/dev/shm/record_48k_src.wav {doa_auido_file}"
     execute_local_command(command, args)
     args.doa_analysis = ""
+
 
 def set_volume(ssh, args):
     if not args.set:
@@ -573,7 +652,7 @@ def main():
         if args.reset:
             reset_alsa_client(ssh, args)
         elif args.command:
-           execute_remote_command(ssh, args)
+            execute_remote_command(ssh, args)
         elif args.doa_analysis:
             doa_analysis(ssh, args)
             print("doa analysis done!")
@@ -587,7 +666,7 @@ def main():
             execute_scp_command(ssh, args)
         else:
             pass
-        
+
         # close ssh connection
         ssh.close()
     else:
