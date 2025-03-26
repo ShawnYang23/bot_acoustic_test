@@ -351,13 +351,14 @@ def exec_record_audio(args):
     execute_remote_command(args)
     print("Recording Done!")
     # convert pcm to wav
+    #TODO(shawn): auto format convert
     if args.engine == "cras" and file_type == "wav":
         args.command = f"sox -t raw -r {rate} -e signed -b 16 -c {chns} {remote_file_path} /tmp/{local_file_name}"
         execute_remote_command(args)
         args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
         execute_remote_command(args)
     # download record file to local
-    command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {local_file_path}"
+    command = f"sshpass -p {args.password} rsync -avz {args.username}@{args.hostname}:{remote_file_path} {args.local_path}"
     print({"command": command})
     execute_local_command(command, args)
     # if cras engine, download src file too
