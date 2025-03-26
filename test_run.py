@@ -57,6 +57,9 @@ def system_prepare(args):
     # Copy the test audio files to the remote system
     command = f"sshpass -p {args.password} rsync -avz ./plays/ {args.username}@{args.hostname}:/root/plays"
     execute_local_command(command, args)
+    # Create a tmp directory in the local system
+    command = f"mkdir -p ./tmp/"
+    execute_local_command(command, args)
     print("[init]: Remote test audio files are prepared")
     # Restart alsa service
     reset_alsa_client(args)
