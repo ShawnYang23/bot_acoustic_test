@@ -115,21 +115,18 @@ def dump_info(args):
                 device_id = int(match.group(1))
                 max_channels = int(match.group(2))
                 name = match.group(3)
-                devices.append(
-                    {"ID": device_id, "Max Channels": max_channels, "Name": name})
+                devices.append({"ID": device_id, "Max Channels": max_channels, "Name": name})
         return devices
 
     cras_output_devices = parse_devices(output_devices_block)
     cras_input_devices = parse_devices(input_devices_block)
     print("Output Devices:")
     for device in cras_output_devices:
-        print(
-            f"  ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
+        print(f" ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
 
     print("\nInput Devices:")
     for device in cras_input_devices:
-        print(
-            f"  ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
+        print(f" ID: {device['ID']}, Max Channels: {device['Max Channels']}, Name: {device['Name']}")
     print("info done!")
 def update_config(args):
     if not args.update:
@@ -340,7 +337,7 @@ def exec_record_audio(args):
     chns = args.pcm_chns
     fmt = args.pcm_fmt
     if args.engine == "cras":
-        cras_card = get_remote_cras_card_parameter(args, "mic", "alsa_card")
+        cras_card = get_remote_cras_card_parameter(args, "mic", "card_id")
         if args.volume == "0":
             args.volume = get_sys_mic_gain(args)
         args.command = f"cras_test_client --select_input {cras_card} --capture_file {remote_file_path} " \
@@ -471,7 +468,7 @@ def get_remote_cras_card_parameter(args, type, param):
         print(f"No info found for the card {card_name}, please check the card name")
         return None
     if param == "card_id":
-        device_pattern =  r"\s+(\d+)[^\n]*" + re.escape(card_name) + r"[^\n]*"
+        device_pattern =  re.compile(r"\s+(\d+)[^\n]*" + re.escape(card_name) + r"[^\n]*")
         cras_card_node = ""
         if(direction == "Output"):
             output_section = info.split("Output Devices:")[1].split("Output Nodes:")[0]
@@ -483,7 +480,7 @@ def get_remote_cras_card_parameter(args, type, param):
                 cras_card_node = node_id[0] + ":0"   
         else:
             input_section = info.split("Input Devices:")[1].split("Input Nodes:")[0]
-            node_id = {match.group(1) for match in device_pattern.finditer(input_section)}
+            node_id = re.findall(device_pattern, input_section)
             if not node_id:
                 print(f"No {dev_type} found with name {args.card_name}")
                 return None
