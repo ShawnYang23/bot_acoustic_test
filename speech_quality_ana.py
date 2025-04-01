@@ -2,7 +2,59 @@ import numpy as np
 import scipy.io.wavfile as wav
 import matplotlib.pyplot as plt
 import argparse
+import os
+import librosa
+from dtw import dtw  # make sure to install the dtw package
 
+
+def align_audio_file(ref_audio_path, recorded_audio_path, algo="cc", save_path=None):
+    # we assume the reference audio is the clean audio
+    ref_audio, sr = librosa.load(ref_audio_path, sr=None)
+    rec_audio, _ = librosa.load(recorded_audio_path, sr=sr)
+    if algo == "cc":
+        # compute the cross-correlation
+        corr = np.correlate(rec_audio, ref_audio, mode="valid")
+        # find the offset
+        offset = np.argmax(corr)
+    else:
+        ref_audio = ref_audio.astype(np.float32)
+        rec_audio = rec_audio.astype(np.float32)
+        ref_mfcc = librosa.feature.mfcc(y=ref_audio, sr=sr)
+        rec_mfcc = librosa.feature.mfcc(y=rec_audio, sr=sr)
+        alignment = dtw(rec_mfcc.T, ref_mfcc.T)
+        offset = alignment.index1[0] 
+
+    # align the recorded audio
+    aligned_audio = rec_audio[offset : offset + len(ref_audio)]
+    if save_path:
+        # if not os.path.exists(save_path):
+        wav.write(save_path, sr, aligned_audio.astype(np.int16))
+        print(f"Aligned audio saved to {save_path}")
+    return aligned_audio
+
+def align_audio_signal(ref_audio, rec_audio, algo="cc", save_path=None):
+    rate = 16000  # default sample rate 
+    if algo == "cc":
+        # compute the cross-correlation
+        corr = np.correlate(rec_audio, ref_audio, mode="valid")
+        # find the offset
+        offset = np.argmax(corr)
+    else:
+        # if using DTW, compute the MFCC features and align using DTW
+        ref_audio = ref_audio.astype(np.float32)
+        rec_audio = rec_audio.astype(np.float32)
+        ref_mfcc = librosa.feature.mfcc(y=ref_audio, sr=rate)
+        rec_mfcc = librosa.feature.mfcc(y=rec_audio, sr=rate)
+        alignment = dtw(rec_mfcc.T, ref_mfcc.T)
+        offset = alignment.index1[0]
+
+    # align the recorded audio
+    aligned_audio = rec_audio[offset : offset + len(ref_audio)]
+    if save_path:
+        # if not os.path.exists(save_path):
+        wav.write(save_path, rate, aligned_audio.astype(np.int16))
+        print(f"Aligned audio saved to {save_path}")
+    return aligned_audio
 
 def read_wav_file(file_path):
     """读取wav文件并返回采样率和音频数据"""
@@ -123,11 +175,12 @@ def main():
             "The two audio files must have the same sampling rate!")
 
     # 裁剪长度一致
-    align_ssig, align_snsig = time_align_via_cross_correlation(speech_signal, speech_with_noise)
+    # align_ssig, align_snsig = time_align_via_cross_correlation(speech_signal, speech_with_noise)
+    align_ssig = align_audio_signal(args.speech_file, args.noise_file)
 
     # 绘制波形
     name = args.noise_file.split('/')[-1].split('.')[0]
-    plot_waveforms(align_ssig, align_snsig, rate_signal, name)
+    plot_waveforms(align_ssig, speech_signal, rate_signal, name)
     
 
 

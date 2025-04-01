@@ -9,14 +9,23 @@ import sys
 import signal
 import threading
 import re
+from multiprocessing import Process
+import copy 
+
+from speech_quality_ana import *
+from pesq_score import pesq_calc
 
 cras_output_devices = []
 cras_input_devices = []
 
 # system init and setup
-def ssh_connect(hostname, port, username, password):
+def ssh_connect(args):
     """建立SSH连接"""
     try:
+        hostname = args.hostname
+        port = args.port
+        username = args.username
+        password = args.password
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(hostname, port, username, password)
@@ -169,14 +178,12 @@ def execute_remote_command(args, fatal=True):
         if not args.verbose:
             print(f"[REMOTE COMMAND]#: {args.command}")
             print(f"[STDOUT:] {stdout_text}")
-            print(f"[STDERR:] {stderr.read().decode().strip()}")
-
+            print(f"[STDERR:] {stderr_text}")
         # Clear the command to prevent it from being executed again
         args.command = ""
         # Merge stdout and stderr, cause sometimes warning info is in stderr
         out_text = stdout_text + stderr_text
         return out_text
-
     except Exception as e:
         print(f"{args.remote_path} #: {args.command}")
         print(f"命令执行失败:\n{str(e)}")
@@ -253,9 +260,22 @@ def execute_scp_command(args):
             execute_local_command(command, args)
             print(
                 f"Upload: \n[local]: {args.local_path}\n-->\n[remote]: {args.remote_path}")
+def parse_wav_file(args, file_path):
+    args.command = f"sox --i -T {file_path}"
+    stdout = execute_local_command(args.command, args)
+    channels = int(re.search(r"Channels\s+:\s+(\d+)", stdout).group(1))
+    rate = int(re.search(r"Sample Rate\s+:\s+(\d+)", stdout).group(1))
+    duration = re.search(r"Duration\s+:\s+([\d:.]+)", stdout).group(1)
+    fmt = re.search(r"Precision\s+:\s+(\d+)", stdout).group(1)
+    hh, mm, ss = map(float, duration.split(':'))
+    duration_sec = hh * 3600 + mm * 60 + ss
+    return [channels, rate, duration_sec, fmt]
 
 #audio operation functions
 def exec_play_audio(args):
+    if hasattr(args, "ssh"):
+        args.ssh.close()
+    args.ssh = ssh_connect(args)
     play_file_path = args.play_file
     remote_file_path = ""
     remote_store_path = "/root/plays/"
@@ -283,22 +303,8 @@ def exec_play_audio(args):
         pass
 
     # get audio file duration
-    args.command = f"sox --i -T {play_file_path}"
-    stdout = execute_remote_command(args)
-    channels = int(re.search(r"Channels\s+:\s+(\d+)", stdout).group(1))
-    rate = int(re.search(r"Sample Rate\s+:\s+(\d+)", stdout).group(1))
-    duration = re.search(r"Duration\s+:\s+([\d:.]+)", stdout).group(1)
-    fmt = re.search(r"Precision\s+:\s+(\d+)", stdout).group(1)
-
-    hh, mm, ss = map(float, duration.split(':'))
-    duration_sec = hh * 3600 + mm * 60 + ss
-    args.pcm_rate = rate
-    args.pcm_chns = channels
-    args.pcm_fmt = f"S{fmt}_LE"
-    ret = check_device_params(args, "spk")
-    if( ret == -1):
-        print("Error: check device params failed")
-        return
+    [args.pcm_chns, args.pcm_rate, duration_sec, pcm_fmt] = parse_wav_file(args, play_file_path)
+    args.pcm_fmt = f"S{pcm_fmt}_LE" 
     print("Playing " + play_file_path + " duration: " +
           str(duration_sec) + "s", "channels: ", args.pcm_chns , "rate: ", args.pcm_rate, "format: ", args.pcm_fmt)
     if args.engine == "cras":
@@ -309,13 +315,21 @@ def exec_play_audio(args):
         args.command = f"cras_test_client --select_output {cras_card} --playback_file {play_file_path} " \
                        f"--rate {args.pcm_rate} --num_channels {args.pcm_chns} --duration_seconds {duration_sec} --volume {args.volume}"
     else:
+        ret = check_device_params(args, "spk")
+        if( ret == -1):
+            print("Error: check device params failed")
+            return
         alsa_card = args.alsa_card
 
-        args.command = f"aplay  -D {alsa_card} -r {rate} -c {channels} -f {args.pcm_fmt} {play_file_path}"
+        args.command = f"aplay  -D {alsa_card} -r { args.pcm_rate} -c {args.pcm_chns} -f {args.pcm_fmt} {play_file_path}"
     execute_remote_command(args)
     print("Playing Done!")
     args.play_file = ""
+
 def exec_record_audio(args):
+    if hasattr(args, "ssh"):
+     args.ssh.close()
+    args.ssh = ssh_connect(args)
     # get base record file name
     local_file_path = args.record_file
     local_file_name = os.path.basename(local_file_path)
@@ -329,10 +343,11 @@ def exec_record_audio(args):
     remote_dir = "/root/records/"
     remote_file_path = remote_dir + local_file_name
     duration = args.duration
-    ret = check_device_params(args, "mic")
-    if( ret == -1):
-        print("Error: check device params failed")
-        return
+    if args.engine == "alsa":
+        ret = check_device_params(args, "mic")
+        if( ret == -1):
+            print("Error: check device params failed")
+            return
     rate = args.pcm_rate
     chns = args.pcm_chns
     fmt = args.pcm_fmt
@@ -448,6 +463,8 @@ def get_remote_alsa_card_parameter(args, type, param):
         return None
 def get_remote_cras_card_info(args, print_flag=True):
     args.command = f"cras_test_client"
+    if(args.cras_info != ""):
+        return args.cras_info
     stdout = execute_remote_command(args)
     if stdout == "":
         print(f"No cras devices found")
@@ -457,6 +474,7 @@ def get_remote_cras_card_info(args, print_flag=True):
         print(stdout)
         return None
     else:
+        args.cras_info = stdout
         return stdout
 def get_remote_cras_card_parameter(args, type, param):
     info = get_remote_cras_card_info(args, False)
@@ -663,6 +681,55 @@ def doa_analysis(args):
     execute_local_command(command, args)
     args.doa_analysis = ""
 
+def audio_quality_record_analysis(args):
+    # both record and play audio with engine cras, and the paras are based on the reference audio file
+    ref_audio_path = args.ref_audio 
+    ref_base_name = os.path.basename(ref_audio_path).split(".")[0] 
+    args.engine = "cras"
+    [args.pcm_chns, args.pcm_rate, args.duration, fmt] = parse_wav_file(args, ref_audio_path)
+
+    # copy args to avoid modifying the original
+    record_args = copy.copy(args)
+    play_args = copy.copy(args)
+    wait_time_s = 2
+    record_args.duration = f"{(int)(args.duration) + wait_time_s + 1}"  
+    record_args.record_file = f"{args.local_path}/{ref_base_name}_{args.card_name}.wav"
+    play_args.play_file = ref_audio_path
+    play_args.card_name = args.ref_speaker
+    play_args.volume = 100
+
+    # remove ssh from args, which can't be pickled. Since Process uses pickle to serialize the arguments
+    if hasattr(record_args, "ssh"):
+        del record_args.ssh
+    if hasattr(play_args, "ssh"):
+        del play_args.ssh
+    
+    # Create separate processes for recording and playback
+    record_proc = Process(target=exec_record_audio, args=(record_args,))
+    play_proc = Process(target=exec_play_audio, args=(play_args,))
+
+    record_proc.start()
+    # wait for cras_test_client to available again
+    time.sleep(wait_time_s)  
+    play_proc.start()
+
+    # Wait for the processes to finish or timeout
+    record_proc.join(timeout=15)
+    play_proc.join(timeout=15)
+
+    if record_proc.is_alive():
+        record_proc.terminate()
+        print("Recording process terminated due to timeout.")
+
+    if play_proc.is_alive():
+        play_proc.terminate()
+        print("Playback process terminated due to timeout.")
+
+    print("Audio recording and playback completed.")
+    
+    pesq_calc(ref_audio_path, [record_args.record_file], "nb")
+
+    
 
 def create_signal_handler(args):
     def signal_handler(sig, frame):
@@ -706,6 +773,7 @@ def main():
     parser.add_argument("--dev_type", choices=["spk", "mic", "all"], default="spk", help="audio device type: spk or mic")
     parser.add_argument("--alsa_card", default="", help="get audio alsa card info by id, default all")
     parser.add_argument("--cras_card", default="", help="get audio cras card info by id, default all")
+    parser.add_argument("--cras_info", default="", help="get cras device info, default empty")
 
     # operation parameters
     parser.add_argument("-l", "--local_path", default=config["DEFAULT"]["local_path"], help="Local file path")
@@ -730,7 +798,10 @@ def main():
     parser.add_argument("--layout", choices=["6x1", "3x2"], default="6x1", help="spilt 6 channel wav file to 6x1 or 3x2 channel files")
     parser.add_argument("--spilt", default="", help="split 6 channel wav file to 3x2 channel files")
     parser.add_argument("--doa_analysis", default="", help="doa analysis")
-
+    parser.add_argument("--audio_qa_record_analysis", action="store_true", help="Perform audio quality analysis")
+    parser.add_argument("--ref_audio", default=config["QUALITY"]["ref_audio"], help="Reference audio file for audio quality analysis")
+    parser.add_argument("--ref_mic", default=config["QUALITY"]["ref_mic"], help="Reference mic file for audio quality analysis")
+    parser.add_argument("--ref_speaker", default=config["QUALITY"]["ref_speaker"], help="Reference speaker file for audio quality analysis")
     args = parser.parse_args()
 
     # signal handler
@@ -750,8 +821,7 @@ def main():
 
     print("[COMMANDS]")
 
-    args.ssh = ssh_connect(args.hostname, args.port,
-                           args.username, args.password)
+    args.ssh = ssh_connect(args)
     if args.ssh:
         # prepare system
         system_prepare(args)
@@ -783,6 +853,8 @@ def main():
             exec_record_audio(args)
         elif args.download or args.upload:
             execute_scp_command(args)
+        elif args.audio_qa_record_analysis:
+            audio_quality_record_analysis(args)
         else:
             pass
 
