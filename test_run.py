@@ -17,6 +17,9 @@ from pesq_score import pesq_calc
 
 cras_output_devices = []
 cras_input_devices = []
+tmp_rate = 0
+tmp_chns = 0
+tmp_fmt = ""
 
 # system init and setup
 def ssh_connect(args):
@@ -262,7 +265,7 @@ def execute_scp_command(args):
                 f"Upload: \n[local]: {args.local_path}\n-->\n[remote]: {args.remote_path}")
 def parse_wav_file(args, file_path):
     args.command = f"sox --i -T {file_path}"
-    stdout = execute_local_command(args.command, args)
+    stdout = execute_remote_command(args)
     channels = int(re.search(r"Channels\s+:\s+(\d+)", stdout).group(1))
     rate = int(re.search(r"Sample Rate\s+:\s+(\d+)", stdout).group(1))
     duration = re.search(r"Duration\s+:\s+([\d:.]+)", stdout).group(1)
@@ -361,6 +364,9 @@ def exec_record_audio(args):
         alsa_card = args.alsa_card
         args.command = f"arecord -D {alsa_card} -f {fmt} " \
                        f"-r {rate} -c {chns} -t wav -d {duration} > {remote_file_path}"
+        rate = tmp_rate if tmp_rate != 0 else rate
+        chns = tmp_chns if tmp_chns != 0 else chns
+        fmt = tmp_fmt if tmp_fmt != "" else fmt
     # record audio
     print(duration + "s Recording...")
     execute_remote_command(args)
@@ -368,6 +374,11 @@ def exec_record_audio(args):
     # convert pcm to wav
     #TODO(shawn): auto format convert
     if args.engine == "cras" and file_type == "wav":
+        args.command = f"sox -t raw -r {rate} -e signed -b 16 -c {chns} {remote_file_path} /tmp/{local_file_name}"
+        execute_remote_command(args)
+        args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
+        execute_remote_command(args)
+    if args.engine == "alsa" and file_type == "wav":
         args.command = f"sox -t raw -r {rate} -e signed -b 16 -c {chns} {remote_file_path} /tmp/{local_file_name}"
         execute_remote_command(args)
         args.command = f"mv /tmp/{local_file_name} {remote_file_path}"
@@ -405,8 +416,8 @@ def get_remote_alsa_card_info(args, type, print_flag=True):
     else:
         #TODO(shawn): change vibe bot mic and speaker name to bot in driver
         card_name = args.card_name
-        if (card_name.find("bot") >= 0) or (card_name.find("vibe") >= 0):
-            card_name = "vibemicarray" if dev_type=="micphone" else "rockchipad82178"
+        if ("bot" in card_name.lower()) or ("vibe" in card_name.lower()):
+            card_name = "vibemicarray" if dev_type == "micphone" else "rockchipad82178"
         args.command = f"{dev_cmd} -l | grep -i {card_name}"
         stdout = execute_remote_command(args)
         if(stdout == ""):
@@ -520,13 +531,14 @@ def check_device_params(args, type):
     if chns <= c_max and chns >= c_min:
         chns = int(chns)
     else:
-        print(f"Warn: Unsupported channel number: {chns}, should be in range [{c_min}, {c_max}]")
+        tmp_chns = chns
         if chns > c_max:
             print(f"Warn: Force set channel number to max: {c_max}")
             chns = c_max
         else:
-            print(f"Error: Audio channels number should be greater than device min channel number {c_min}")
-            return-1
+            chns = c_min
+            # print(f"Error: Audio channels number should be greater than device min channel number {c_min}")
+            # return -1
     args.pcm_chns = int(chns)
        
     r_min, r_max = get_remote_alsa_card_parameter(args, type, "rate")
@@ -534,10 +546,12 @@ def check_device_params(args, type):
     if rate <= r_max and rate >= r_min:
         rate = int(rate)
     else:
-        #cras engine will adjust rate to device support rate
-        if args.engine == "alsa":
-            print(f"Error: Unsupported rate: {rate}, should be in range [{r_min}, {r_max}]")
-            return -1
+        tmp_rate = rate
+        if rate > r_max:
+            print(f"Warn: Force set sample rate to max: {r_max}")
+            rate = r_max
+        else:
+            rate = r_min
     args.pcm_rate = int(rate)
 
     f_min, f_max = get_remote_alsa_card_parameter(args, type, "fmt")
@@ -546,8 +560,12 @@ def check_device_params(args, type):
     if fmt <= f_max and fmt >= f_min:
         fmt = int(fmt)
     else:
-        print(f"Error: Unsupported format: {fmt}, should be in range [{f_min}, {f_max}]")
-        return -1
+        tmp_fmt = f"S{fmt}_LE"
+        if fmt > f_max:
+            print(f"Warn: Force set sample format to max: {f_max}")
+            fmt = f_max
+        else:
+            fmt = f_min
     args.pcm_fmt =f"S{fmt}_LE"
     
     return 0

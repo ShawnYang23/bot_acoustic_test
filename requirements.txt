@@ -42,3 +42,4 @@ typing_extensions=4.12.2
 urllib3=2.3.0
 dtw_python=1.5.3
 librosa
+pydub=0.25.1
