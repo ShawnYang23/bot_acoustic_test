@@ -161,10 +161,15 @@ def StrToTimestamp(s):
 
     """
     fmt = "%Y-%m-%dT%H:%M:%S"
-    t = time.strptime(s[:-10], fmt)
-    # Ignore date to avoid a long timestamp.
-    ts = t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
-    return "{:d}.{}".format(ts, s[-9:])
+    if not s or len(s) < 20:  
+        raise ValueError(f"Invalid timestamp string: '{s}'")
+    try:
+        t = time.strptime(s[:-10], fmt)
+        ts = t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec
+        return "{:d}.{}".format(ts, s[-9:])
+    except Exception as e:
+        raise ValueError(f"Failed to parse time string '{s}': {e}")
+
 
 
 Tag = collections.namedtuple('Tag', ['time', 'text', 'position', 'class_name'])
@@ -479,8 +484,12 @@ class EventLogParser(object):
 
         """
         line_split = line.split()
-        time, name = StrToTimestamp(line_split[0]), line_split[3]
-        logging.debug('time: %s, name: %s', time, name)
+        try:
+            time, name = StrToTimestamp(line_split[0]), line_split[3]
+        except Exception as e:
+            logging.warning(f"Skip line due to time parse error: {e}")
+            return None 
+
         props = {}
         for index in range(4, len(line_split)):
             tokens = line_split[index].split(':')
