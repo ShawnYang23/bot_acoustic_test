@@ -3,3 +3,4 @@
 orignal/
 tmp/
 /tmp*
+__pycache__/
