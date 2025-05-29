@@ -1,0 +1,163 @@
+import paramiko
+import os
+import subprocess
+from scp import SCPClient
+
+class SSHClient:
+    def __init__(self, hostname, username, password):
+        self.hostname = hostname
+        self.username = username
+        self.password = password
+        self.client = None
+        self.ssh_transport = None
+        self.scp_client = None
+
+    def connect(self):
+        """
+        Establish an SSH connection.
+        """
+        try:
+            # Create SSH client instance
+            self.client = paramiko.SSHClient()
+            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+            # Connect to the remote host
+            self.client.connect(self.hostname, username=self.username, password=self.password)
+            
+            # Create SCP client for file transfer
+            self.ssh_transport = self.client.get_transport()
+            self.scp_client = SCPClient(self.ssh_transport)
+
+            print(f"Connected to {self.hostname} as {self.username}")
+            return True
+        except Exception as e:
+            print(f"Failed to connect: {e}")
+            return False
+
+    def execute_command(self, command):
+        """
+        Execute a remote command and return the output as a string.
+        """
+        try:
+            stdin, stdout, stderr = self.client.exec_command(command)
+            # Get the output and error (if any)
+            output = stdout.read().decode("utf-8")
+            error = stderr.read().decode("utf-8")
+
+            if error:
+                print(f"Error: {error}")
+            return output
+        except Exception as e:
+            print(f"Failed to execute command: {e}")
+            return None
+
+    def upload_file(self, local_file, remote_path):
+        """
+        Upload a file to the remote server using SCP.
+        """
+        try:
+            if self.scp_client:
+                self.scp_client.put(local_file, remote_path)
+                print(f"File {local_file} uploaded to {remote_path}")
+            else:
+                print("SCP client not initialized. Ensure SSH connection is established.")
+        except Exception as e:
+            print(f"Failed to upload file: {e}")
+
+    def download_file(self, remote_file, local_path):
+        """
+        Download a file from the remote server using SCP.
+        """
+        try:
+            if self.scp_client:
+                self.scp_client.get(remote_file, local_path)
+                print(f"File {remote_file} downloaded to {local_path}")
+            else:
+                print("SCP client not initialized. Ensure SSH connection is established.")
+        except Exception as e:
+            print(f"Failed to download file: {e}")
+
+    def close(self):
+        """
+        Close the SSH connection and SCP client.
+        """
+        try:
+            if self.scp_client:
+                self.scp_client.close()
+            if self.client:
+                self.client.close()
+            print("Connection closed.")
+        except Exception as e:
+            print(f"Error while closing connection: {e}")
+    
+    def file_exists(self, remote_file):
+        """
+        Check if a file exists on the remote server.
+        """
+        try:
+            command = f"test -f {remote_file} && echo 'File exists' || echo 'File does not exist'"
+            output = self.execute_command(command)
+            return "File exists" in output
+        except Exception as e:
+            print(f"Failed to check file existence: {e}")
+            return False
+    
+    def is_dir(self, remote_dir):
+        """
+        Check if a directory exists on the remote server.
+        """
+        try:
+            command = f"test -d {remote_dir} && echo 'Directory exists' || echo 'Directory does not exist'"
+            output = self.execute_command(command)
+            return "Directory exists" in output
+        except Exception as e:
+            print(f"Failed to check directory existence: {e}")
+            return False
+        
+    def reset(self, args):
+        """
+        Reset the remote system by checking if the root directory is writable,
+        creating necessary directories, copying test audio files, and preparing the local system.
+        """
+        # Check if the root directory is writable and remount if necessary
+        command = "mount | grep ' / ' | grep rw || mount -o remount,rw /"
+        self.execute_command(command)
+        print("[init]: Remote root directory is writable")
+        # Ensure the necessary directories and files exist in the remote system
+        command = "mkdir -p /root/plays /root/records"
+        self.execute_command(command)
+        print("[init]: Remote work directories are created")
+        # Restart alsa service
+        command = f"pkill -f 'arecord|aplay|cras_test_client|scp'"
+        self.execute_command(command)
+        # Copy the test audio files to the remote system
+        command = f"sshpass -p {self.password} rsync -avz ./plays/ {self.username}@{self.hostname}:/root/plays"
+        subprocess.run(command, shell=True, check=True)
+        print("[init]: Remote test audio files are prepared")
+        # Create a tmp directory in the local system
+        command = f"mkdir -p ./tmp/"
+        subprocess.run(command, shell=True, check=True)
+        print("[init]: Reset alsa client")
+        print("[init]: Remote system is initialized")
+        return True
+
+# Example Usage
+if __name__ == "__main__":
+    # Initialize the SSH client
+    ssh_client = SSHClient(hostname="192.168.50.140", username="root", password="test0000")
+
+    # Connect to the remote host
+    if ssh_client.connect():
+        # Execute a remote command
+        output = ssh_client.execute_command("ls -l /tmp")
+        if output:
+            print("Command output:", output)
+
+        # Upload a file (example)
+        ssh_client.upload_file("local_file.txt", "/tmp/remote_file.txt")
+
+        # Download a file (example)
+        ssh_client.download_file("/tmp/remote_file.txt", "downloaded_file.txt")
+
+        # Close the SSH connection
+        ssh_client.close()
