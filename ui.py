@@ -11,6 +11,7 @@ import io
 from ssh_client import SSHClient
 from audio_module import AudioModule
 
+
 class RemoteHostApp:
     def __init__(self, root):
         self.root = root
@@ -43,7 +44,6 @@ class RemoteHostApp:
         self.page1 = ttk.Frame(self.navbar)
         self.navbar.add(self.page1, text=self.get_text("SSH"))
 
-
         # Page 3 - File management (Upload/Download)
         self.page3 = ttk.Frame(self.navbar)
         self.navbar.add(self.page3, text=self.get_text("Files"))
@@ -72,85 +72,103 @@ class RemoteHostApp:
         for widget in self.page1.winfo_children():
             widget.destroy()
 
+        # Configure row and column weights for page1 to enable resizing
+        for i in range(10):  # enough rows
+            self.page1.grid_rowconfigure(i, weight=1)
+        for j in range(8):   # enough columns
+            self.page1.grid_columnconfigure(j, weight=1)
+
+        # Top label
         label = tk.ttk.Label(self.page1, text=self.get_text("Home Page"),
-                                font=("Arial", self.default_font_size))
-        label.grid(row=0, column=0, columnspan=8, pady=10)
-        
-        ssh_frame = tk.Frame(self.page1)
-        ssh_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
-        
-        # Hostname entry with default value
-        default_hostname = self.hostname
+                            font=("Arial", self.default_font_size))
+        label.grid(row=0, column=0, columnspan=8, pady=10, sticky="nsew")
+
+        # ssh_frame container and layout configuration
+        ssh_frame = tk.Frame(self.page1, relief=tk.GROOVE, borderwidth=2)
+        ssh_frame.grid(row=1, column=0, columnspan=2, rowspan=9,
+                    padx=10, pady=10, sticky="nsew")
+        # Configure grid weights inside ssh_frame
+        for i in range(10):
+            ssh_frame.grid_rowconfigure(i, weight=1)
+        for j in range(2):
+            ssh_frame.grid_columnconfigure(j, weight=1)
+
+        # Hostname label and entry
         tk.Label(ssh_frame, text=self.get_text("Hostname: ")).grid(
-            row=1, column=0, sticky="e")
+            row=0, column=0, sticky="w", padx=5, pady=5)
         self.hostname_entry = tk.Entry(ssh_frame)
-        # Set the default value in the entry field
-        self.hostname_entry.insert(tk.END, default_hostname)
-        self.hostname_entry.grid(row=1, column=1)
+        self.hostname_entry.insert(tk.END, self.hostname)
+        self.hostname_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        # Username entry with default value
-        default_username = self.username
+        # Username label and entry
         tk.Label(ssh_frame, text=self.get_text("Username: ")).grid(
-            row=2, column=0, sticky="e")
+            row=1, column=0, sticky="w", padx=5, pady=5)
         self.username_entry = tk.Entry(ssh_frame)
-        # Set the default value in the entry field
-        self.username_entry.insert(tk.END, default_username)
-        self.username_entry.grid(row=2, column=1)
+        self.username_entry.insert(tk.END, self.username)
+        self.username_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        # Password entry with default value
-        default_password = self.password
+        # Password label and entry
         tk.Label(ssh_frame, text=self.get_text("Password: ")).grid(
-            row=3, column=0, sticky="e")
+            row=2, column=0, sticky="w", padx=5, pady=5)
         self.password_entry = tk.Entry(ssh_frame, show="*")
-        # Set the default value in the entry field
-        self.password_entry.insert(tk.END, default_password)
-        self.password_entry.grid(row=3, column=1)
+        self.password_entry.insert(tk.END, self.password)
+        self.password_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
-        # Connect Button
-        connect_button = tk.Button(ssh_frame, text=self.get_text(
-            "Connect"), command=self.connect_to_ssh)
-        connect_button.grid(row=4, column=0, columnspan=2, pady=10)
-        self.status_label = tk.Label(
-            ssh_frame, text=self.get_text("Status: Not connected"), fg="red")
-        self.status_label.grid(row=5, column=0, columnspan=2, pady=10)
-        # remote reset button
-        reset_button = tk.Button(ssh_frame, text=self.get_text(
-            "Remote Reset"), command=lambda: self.remote_reset())
-        reset_button.grid(row=9, column=0, rowspan=2, pady=10)
-        # ui fresh button
-        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text(
-            "UI Fresh"), command=lambda: self.restart_app())
-        ui_fresh_button.grid(row=9, column=1, columnspan=2, pady=10)
-        #log text widget
-        self.log_frame = tk.Frame(self.page1)
-        self.log_frame.grid(row=1, column=3, columnspan=4, rowspan=4, padx=10, pady=10, sticky="nsew")
-        self.log_text = tk.Text(self.log_frame, wrap="word", height=20, width=80)
-        self.log_text.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
-        # Redirect stdout to log_text
+        # Connect button
+        connect_button = tk.Button(ssh_frame, text=self.get_text("Connect"),
+                                command=self.connect_to_ssh)
+        connect_button.grid(row=3, column=0, columnspan=2,
+                            pady=10, sticky="nsew", padx=5)
+
+        # Status label
+        self.status_label = tk.Label(ssh_frame, text=self.get_text("Status: Not connected"),
+                                    fg="red")
+        self.status_label.grid(row=4, column=0, columnspan=2,
+                            pady=10, sticky="nsew", padx=5)
+
+        # Remote Reset button
+        reset_button = tk.Button(ssh_frame, text=self.get_text("Remote Reset"),
+                                command=self.remote_reset)
+        reset_button.grid(row=5, column=0, sticky="ew", padx=5, pady=10)
+
+        # UI Refresh button
+        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("UI Fresh"),
+                                    command=self.restart_app)
+        ui_fresh_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
+
+        # log_frame and its internal widgets
+        self.log_frame = tk.Frame(self.page1, relief=tk.SUNKEN, borderwidth=2)
+        self.log_frame.grid(row=1, column=3, columnspan=5, rowspan=6,
+                            padx=10, pady=10, sticky="nsew")
+        self.log_frame.grid_rowconfigure(0, weight=1)
+        self.log_frame.grid_columnconfigure(0, weight=1)
+
+        self.log_text = tk.Text(self.log_frame, wrap="word")
+        self.log_text.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        # Redirect stdout to log_text widget
         sys.stdout = self.RedirectText(self.log_text)
 
+        # log_ctl_frame and layout
         log_ctl_frame = tk.Frame(self.page1)
-        log_ctl_frame.grid(row=5, column=3, columnspan=4, padx=10, pady=10, sticky="nsew")
-        # Configure columns so that they don't expand
-        # Column 0 for "Clear Logs" button
-        log_ctl_frame.grid_columnconfigure(0, weight=1, minsize=50)
-        # Column 1 for "Save Logs" button
-        log_ctl_frame.grid_columnconfigure(1, weight=1, minsize=50)
-        # Column 2 for file path Entry
-        log_ctl_frame.grid_columnconfigure(2, weight=1, minsize=50)
+        log_ctl_frame.grid(row=7, column=3, columnspan=5,
+                        padx=10, pady=10, sticky="ew")
+        for j in range(3):
+            log_ctl_frame.grid_columnconfigure(j, weight=1)
 
-        # Buttons and Entry for saving logs
-        clear_button = tk.Button(
-            log_ctl_frame, text="Clear Logs", command=self.clear_logs)
-        clear_button.grid(row=4, column=0, padx=1, pady=5, sticky="ew")
+        # Clear logs button
+        clear_button = tk.Button(log_ctl_frame, text="Clear Logs",
+                                command=self.clear_logs)
+        clear_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
-        save_button = tk.Button(
-            log_ctl_frame, text="Save Logs", command=self.save_logs)
-        save_button.grid(row=4, column=1, padx=1, pady=5, sticky="ew")
+        # Save logs button
+        save_button = tk.Button(log_ctl_frame, text="Save Logs",
+                                command=self.save_logs)
+        save_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        # Entry for saving log path
-        self.save_path_entry = tk.Entry(log_ctl_frame, width=30)
-        self.save_path_entry.grid(row=4, column=2, padx=1, pady=5, sticky="ew")
+        # Save path entry
+        self.save_path_entry = tk.Entry(log_ctl_frame)
+        self.save_path_entry.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
         self.save_path_entry.insert(0, "/tmp/log.txt")
 
     def clear_logs(self):
@@ -192,260 +210,396 @@ class RemoteHostApp:
             self.text_widget.yview("end")  # Auto scroll to the end
 
     def setup_page3(self):
-        # 清空页面上的所有控件
+        # Clear all widgets on page3
         for widget in self.page3.winfo_children():
             widget.destroy()
 
-        # 文件操作标题
-        file_operations_label = tk.Label(self.page3, text=self.get_text(
-            "File Upload/Download"), font=("Arial", self.default_font_size))
-        file_operations_label.pack(pady=10)
+        # Configure grid weights for page3 for responsiveness
+        for i in range(10):  # enough rows
+            self.page3.grid_rowconfigure(i, weight=1)
+        for j in range(2):  # 2 columns enough
+            self.page3.grid_columnconfigure(j, weight=1)
 
-        # 创建 Upload 部分的 Frame
+        # Title label for file operations
+        file_operations_label = tk.Label(
+            self.page3, text=self.get_text("File Upload/Download"),
+            font=("Arial", self.default_font_size)
+        )
+        file_operations_label.grid(row=0, column=0, columnspan=2, pady=10, sticky="nsew")
+
+        # Upload Frame setup
         upload_frame = tk.LabelFrame(
-            self.page3, text="Upload File", padx=10, pady=10)
-        upload_frame.pack(padx=10, pady=10, fill="x")
+            self.page3, text="Upload File", padx=10, pady=10
+        )
+        upload_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
-        # 上传按钮
-        upload_button = tk.Button(upload_frame, text=self.get_text(
-            "Upload File"), command=self.upload_file)
-        upload_button.grid(row=0, column=0, padx=5, pady=5)
+        # Configure grid inside upload_frame
+        for i in range(3):
+            upload_frame.grid_rowconfigure(i, weight=1)
+        upload_frame.grid_columnconfigure(0, weight=0)
+        upload_frame.grid_columnconfigure(1, weight=1)
 
-        # 上传源路径输入框
+        # Upload button
+        upload_button = tk.Button(
+            upload_frame, text=self.get_text("Upload File"), command=self.upload_file
+        )
+        upload_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        # Upload source path label and entry
         update_src_label = tk.Label(upload_frame, text=self.get_text("Source Path:"))
-        update_src_label.grid(row=1, column=0, pady=5)
-        self.upload_entry_src = tk.Entry(upload_frame, width=50)
-        self.upload_entry_src.insert(tk.END, "/tmp/")  # 默认源路径
-        self.upload_entry_src.grid(row=1, column=1, pady=5)
-        # 上传目标路径输入框
+        update_src_label.grid(row=1, column=0, pady=5, sticky="e")
+        self.upload_entry_src = tk.Entry(upload_frame)
+        self.upload_entry_src.insert(tk.END, "/tmp/")  # Default source path
+        self.upload_entry_src.grid(row=1, column=1, pady=5, sticky="ew")
+
+        # Upload destination path label and entry
         update_dest_label = tk.Label(upload_frame, text=self.get_text("Destination Path:"))
-        update_dest_label.grid(row=2, column=0, pady=5)
-        self.upload_entry_dest = tk.Entry(upload_frame, width=50)
-        self.upload_entry_dest.insert(tk.END, "/root/plays/")  # 默认目标路径
-        self.upload_entry_dest.grid(row=2, column=1, pady=5)    
+        update_dest_label.grid(row=2, column=0, pady=5, sticky="e")
+        self.upload_entry_dest = tk.Entry(upload_frame)
+        self.upload_entry_dest.insert(tk.END, "/root/plays/")  # Default destination path
+        self.upload_entry_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
-        # 创建 Download 部分的 Frame
+        # Download Frame setup
         download_frame = tk.LabelFrame(
-            self.page3, text="Download File", padx=10, pady=10)
-        download_frame.pack(padx=10, pady=10, fill="x")
+            self.page3, text="Download File", padx=10, pady=10
+        )
+        download_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
-        # 下载按钮
-        download_button = tk.Button(download_frame, text=self.get_text(
-            "Download File"), command=self.download_file)
-        download_button.grid(row=0, column=0, padx=5, pady=5)
+        # Configure grid inside download_frame
+        for i in range(3):
+            download_frame.grid_rowconfigure(i, weight=1)
+        download_frame.grid_columnconfigure(0, weight=0)
+        download_frame.grid_columnconfigure(1, weight=1)
 
-        # 下载源路径输入框
+        # Download button
+        download_button = tk.Button(
+            download_frame, text=self.get_text("Download File"), command=self.download_file
+        )
+        download_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        # Download source path label and entry
         download_src_label = tk.Label(download_frame, text=self.get_text("Source Path:"))
-        download_src_label.grid(row=1, column=0, pady=5)
-        self.download_entry_src = tk.Entry(download_frame, width=50)
-        self.download_entry_src.insert(tk.END, "/root/records/")  # 默认源路径
-        self.download_entry_src.grid(row=1, column=1, pady=5)
+        download_src_label.grid(row=1, column=0, pady=5, sticky="e")
+        self.download_entry_src = tk.Entry(download_frame)
+        self.download_entry_src.insert(tk.END, "/root/records/")  # Default source path
+        self.download_entry_src.grid(row=1, column=1, pady=5, sticky="ew")
 
-        # 下载目标路径输入框
+        # Download destination path label and entry
         download_dest_label = tk.Label(download_frame, text=self.get_text("Destination Path:"))
-        download_dest_label.grid(row=2, column=0, pady=5)
-        self.download_entry_dest = tk.Entry(download_frame, width=50)
-        self.download_entry_dest.insert(tk.END, "/tmp/")  # 默认目标路径
-        self.download_entry_dest.grid(row=2, column=1, pady=5)
+        download_dest_label.grid(row=2, column=0, pady=5, sticky="e")
+        self.download_entry_dest = tk.Entry(download_frame)
+        self.download_entry_dest.insert(tk.END, "/tmp/")  # Default destination path
+        self.download_entry_dest.grid(row=2, column=1, pady=5, sticky="ew")
+
 
     def setup_page4(self):
         # Clear page elements
         for widget in self.page4.winfo_children():
             widget.destroy()
 
+        # Configure page4 grid layout
+        for i in range(5):  
+            self.page4.grid_rowconfigure(i, weight=1)
+        for j in range(4):  
+            self.page4.grid_columnconfigure(j, weight=1)
+
         # page4 label
         record_play_label = tk.Label(self.page4, text=self.get_text(
             "Audio"), font=("Arial", self.default_font_size))
-        record_play_label.grid(row=0, column=0, columnspan=4, rowspan=2, pady=10)
+        record_play_label.grid(
+            row=0, column=0, columnspan=4, rowspan=2, pady=10, sticky="nsew")
 
         # Basic audio parameters settings
         self.audio_settings_frame = tk.LabelFrame(
             self.page4, text="Audio Settings", padx=10, pady=10)
-        self.audio_settings_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nesw", columnspan=2, rowspan=2)
+        self.audio_settings_frame.grid(
+            row=2, column=0, padx=10, pady=10, sticky="nsew", columnspan=2, rowspan=2)
+
+        # configure audio_settings_frame grid layout
+        for i in range(5):
+            self.audio_settings_frame.grid_rowconfigure(i, weight=1)
+        for j in range(2):
+            self.audio_settings_frame.grid_columnconfigure(j, weight=1)
 
         # Sampling rate settings
         self.sampling_rate_label = tk.Label(
             self.audio_settings_frame, text="Sampling Rate:")
-        self.sampling_rate_label.grid(row=0, column=0, padx=5, pady=5)
+        self.sampling_rate_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.sampling_rate = tk.StringVar(value="48000")
         self.sampling_rate_entry = tk.Entry(
             self.audio_settings_frame, textvariable=self.sampling_rate)
-        self.sampling_rate_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.sampling_rate_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         # Channels settings
         self.channels_label = tk.Label(
             self.audio_settings_frame, text="Channels:")
-        self.channels_label.grid(row=1, column=0, padx=5, pady=5)
+        self.channels_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.channels = tk.StringVar(value="2")
         self.channels_entry = tk.Entry(
             self.audio_settings_frame, textvariable=self.channels)
-        self.channels_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.channels_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         # Data type settings
         self.data_type_label = tk.Label(
             self.audio_settings_frame, text="Data Type:")
-        self.data_type_label.grid(row=2, column=0, padx=5, pady=5)
+        self.data_type_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.data_type = tk.StringVar(value="S16_LE")
         self.data_type_entry = tk.Entry(
             self.audio_settings_frame, textvariable=self.data_type)
-        self.data_type_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.data_type_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         # Engine selection (alsa/cras)
         self.engine_label = tk.Label(self.audio_settings_frame, text="Engine:")
-        self.engine_label.grid(row=3, column=0, padx=5, pady=5)
+        self.engine_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.engine = tk.StringVar(value="alsa")
         self.engine_combobox = tk.OptionMenu(
             self.audio_settings_frame, self.engine, "alsa", "cras")
-        self.engine_combobox.grid(row=3, column=1, padx=5, pady=5)
+        self.engine_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
         # File type selection (wav/pcm)
         self.file_type_label = tk.Label(
             self.audio_settings_frame, text="File Type:")
-        self.file_type_label.grid(row=4, column=0, padx=5, pady=5)
+        self.file_type_label.grid(row=4, column=0, padx=5, pady=5, sticky="w")
         self.file_type = tk.StringVar(value="wav")
         self.file_type_combobox = tk.OptionMenu(
             self.audio_settings_frame, self.file_type, "wav", "pcm")
-        self.file_type_combobox.grid(row=4, column=1, padx=5, pady=5)
+        self.file_type_combobox.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
 
         # Audio recording module
-        self.record_frame = tk.LabelFrame(
-            self.page4, text="Record Audio", padx=10, pady=10)
-        self.record_frame.grid(row=2, column=3, padx=20, pady=1, sticky="nesw")
+        self.record_frame = tk.LabelFrame(self.page4, text="Record Audio", padx=10, pady=10)
+        self.record_frame.grid(row=2, column=3, padx=20, pady=10, sticky="nsew")
 
-        self.record_device_label = tk.Label(
-            self.record_frame, text="Recording Device:")
-        self.record_device_label.grid(
-            row=0, column=0, padx=5, pady=5, sticky="w")
+        # configure record_frame grid layout
+        for i in range(4):
+            self.record_frame.grid_columnconfigure(i, weight=1)
+        for i in range(3):
+            self.record_frame.grid_rowconfigure(i, weight=1)
+
+        # === Row 0: Device selection and rec duration ===
+        self.record_device_label = tk.Label(self.record_frame, text="Recording Device:")
+        self.record_device_label.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="e")
+
         self.record_device = tk.StringVar(value="Default")
         self.record_device.trace_add("write", self.update_device_menu)
-        self.record_device_combobox = tk.OptionMenu(
-            self.record_frame, self.record_device, "menu", "none")
-        self.record_device_combobox.grid(
-            row=0, column=1, padx=5, pady=5, sticky="w")
-        record_button = tk.Button(self.record_frame, text=self.get_text(
-            "Start Recording"), command=self.record_audio)
-        record_button.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+
+        self.record_device_combobox = tk.OptionMenu(self.record_frame, self.record_device, "menu", "none")
+        self.record_device_combobox.grid(row=0, column=1, padx=(0, 15), pady=5, sticky="w")
+
+        self.rec_dur_label = tk.Label(self.record_frame, text="Rec Duration (sec):")
+        self.rec_dur_label.grid(row=0, column=2, padx=(0, 5), pady=5, sticky="e")
+
+        self.rec_dur = tk.StringVar(value="10")
+        self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur, width=5)
+        self.rec_dur_entry.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+
+        # === Row 1: Progress Bar ===
+        self.record_progress = ttk.Progressbar(self.record_frame, orient="horizontal", length=400, mode="determinate")
+        self.record_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+
+        # === Row 2: Start/Stop Button + Path Entry ===
+        self.is_recording = False
+        self.record_button = tk.Button(
+            self.record_frame,
+            text=self.get_text("Start Recording"),
+            command=self.record_audio
+        )
+        self.record_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
         self.rec_path_entry = tk.Entry(self.record_frame, width=50)
-        self.rec_path_entry.insert(
-            tk.END, "/root/records/")  # Default save path
-        self.rec_path_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        self.rec_path_entry.insert(tk.END, "/root/records/")
+        self.rec_path_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+
 
         # Audio playback module
-        self.play_frame = tk.LabelFrame(
-            self.page4, text="Audio Playback", padx=10, pady=10)
-        self.play_frame.grid(row=3, column=3, padx=20, pady=1, sticky="nesw")
-        self.play_deviece_label = tk.Label(
-            self.play_frame, text="Playback Device:")
-        self.play_deviece_label.grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
+        self.play_frame = tk.LabelFrame(self.page4, text="Audio Playback", padx=10, pady=10)
+        self.play_frame.grid(row=3, column=3, padx=20, pady=10, sticky="nsew")
+
+        # configure play_frame grid layout
+        for i in range(4):
+            self.play_frame.grid_columnconfigure(i, weight=1)
+        for i in range(3):
+            self.play_frame.grid_rowconfigure(i, weight=1)
+
+        # === Row 0: Playback Device Selector + Duration display ===
+        self.play_deviece_label = tk.Label(self.play_frame, text="Playback Device:")
+        self.play_deviece_label.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="e")
+
         self.play_device = tk.StringVar(value="Default")
         self.play_device.trace_add("write", self.update_device_menu)
-        self.play_device_combobox = tk.OptionMenu(
-            self.play_frame, self.play_device, "menu", "none")
-        self.play_device_combobox.grid(
-            row=0, column=1, padx=5, pady=5, sticky="w")
 
-        play_button = tk.Button(self.play_frame, text=self.get_text(
-            "Start Playing"), command=self.play_audio)
-        play_button.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.play_device_combobox = tk.OptionMenu(self.play_frame, self.play_device, "menu", "none")
+        self.play_device_combobox.grid(row=0, column=1, padx=(0, 15), pady=5, sticky="w")
+
+        self.play_duration_static_label = tk.Label(self.play_frame, text="Duration:")
+        self.play_duration_static_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
+
+        self.play_duration_value = tk.StringVar(value="0.0 sec")
+        self.play_duration_label = tk.Label(self.play_frame, textvariable=self.play_duration_value)
+        self.play_duration_label.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+
+        # === Row 1: Progress Bar ===
+        self.play_progress = ttk.Progressbar(self.play_frame, orient="horizontal", length=400, mode="determinate")
+        self.play_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+
+        # === Row 2: Start/Stop Button + File Path Entry ===
+        self.is_playing = False
+        self.play_button = tk.Button(
+            self.play_frame,
+            text=self.get_text("Start Playing"),
+            command=self.play_audio
+        )
+        self.play_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
         self.file_path_entry = tk.Entry(self.play_frame, width=50)
-        # Default file path for playback
         self.file_path_entry.insert(tk.END, "/root/plays/")
-        self.file_path_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
-        
-        #audio analysis module
+        self.file_path_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+
+        # audio analysis module
         self.analysis_frame = tk.LabelFrame(
             self.page4, text="Audio Analysis", padx=10, pady=10)
-        self.analysis_frame.grid(row=4, column=0, padx=20, pady=1, sticky="nesw", columnspan=4)
+        self.analysis_frame.grid(
+            row=4, column=0, padx=20, pady=1, sticky="nsew", columnspan=4)
 
-        self.analysis_label = tk.Label(self.analysis_frame, text="Analysis Menu:")
-        self.analysis_label.grid(row=0, column=0, padx=5, pady=5)
+        # configure analysis_frame grid layout
+        self.analysis_frame.grid_rowconfigure(0, weight=1)
+        self.analysis_frame.grid_rowconfigure(1, weight=1)
+        self.analysis_frame.grid_rowconfigure(2, weight=1)
+        self.analysis_frame.grid_columnconfigure(0, weight=1)
+        self.analysis_frame.grid_columnconfigure(1, weight=3)
+
+        self.analysis_label = tk.Label(
+            self.analysis_frame, text="Analysis Menu:")
+        self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.analysis_method = tk.StringVar(value="PESG")
         methods = ["PESG", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(
             self.analysis_frame, textvariable=self.analysis_method, values=methods, state="readonly")
-        self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        self.analysis_method_combobox.grid(
+            row=0, column=1, padx=5, pady=5, sticky="ew")
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
         ref_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.ref_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        self.ref_audio_entry.insert(tk.END, "./plays/ref.wav")  # Default reference audio
-        self.ref_audio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        # Default reference audio
+        self.ref_audio_entry.insert(tk.END, "./plays/ref.wav")
+        self.ref_audio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.target_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        self.target_audio_entry.insert(tk.END, "./records/record.wav")  # Default target audio
-        self.target_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        self.target_audio_entry.insert(
+            tk.END, "./records/record.wav")  # Default target audio
+        self.target_audio_entry.grid(
+            row=2, column=1, padx=5, pady=5, sticky="ew")
 
-        analyze_button = tk.Button(self.analysis_frame, text="Analyze", command=self.analyze_audio)
-        analyze_button.grid(row=3, column=0, columnspan=2, padx=5, pady=5)
-
+        # Analysis run button
+        self.analysis_button = tk.Button(
+            self.analysis_frame, text="Run Analysis", command=self.analyze_audio)
+        self.analysis_button.grid(row=3, column=0, columnspan=2, pady=10)
 
     def setup_page5(self):
+        # Clear all widgets on page5
         for widget in self.page5.winfo_children():
             widget.destroy()
 
-        video_record_label = tk.Label(self.page5, text=self.get_text(
-            "Video Recording and Playback"), font=("Arial", self.default_font_size))
-        video_record_label.pack(pady=10)
+        # Configure grid layout for page5
+        for i in range(3):
+            self.page5.grid_rowconfigure(i, weight=1, pad=10)
+        self.page5.grid_columnconfigure(0, weight=1, pad=10)
 
-        record_video_button = tk.Button(self.page5, text=self.get_text(
-            "Start Recording"), command=self.record_video)
-        record_video_button.pack(pady=5)
+        # Title label for video section
+        video_record_label = tk.Label(
+            self.page5,
+            text=self.get_text("Video Recording and Playback"),
+            font=("Arial", self.default_font_size + 2, "bold")
+        )
+        video_record_label.grid(row=0, column=0, pady=(20, 10), sticky="n")
 
-        play_video_button = tk.Button(self.page5, text=self.get_text(
-            "Play Video"), command=self.play_video)
-        play_video_button.pack(pady=5)
+        # Button to start recording
+        record_video_button = tk.Button(
+            self.page5,
+            text=self.get_text("Start Recording"),
+            command=self.record_video,
+            width=20
+        )
+        record_video_button.grid(row=1, column=0, pady=10, sticky="n")
+
+        # Button to play recorded video
+        play_video_button = tk.Button(
+            self.page5,
+            text=self.get_text("Play Video"),
+            command=self.play_video,
+            width=20
+        )
+        play_video_button.grid(row=2, column=0, pady=10, sticky="n")
 
     def setup_page6(self):
+        # Clear all widgets on page6
         for widget in self.page6.winfo_children():
             widget.destroy()
 
-        settings_label = tk.Label(self.page6, text=self.get_text(
-            "Settings"), font=("Arial", self.default_font_size))
-        settings_label.pack(pady=5)
+        # Configure grid weights for page6 to make it responsive
+        for i in range(5):
+            self.page6.grid_rowconfigure(i, weight=1, pad=5)
+        for j in range(4):
+            self.page6.grid_columnconfigure(j, weight=1, pad=5)
 
-        # Create parameter settings frame
+        # Title label for settings
+        settings_label = tk.Label(
+            self.page6, text=self.get_text("Settings"),
+            font=("Arial", self.default_font_size + 4, "bold")
+        )
+        settings_label.grid(row=0, column=0, columnspan=4, pady=(10, 15), sticky="nsew")
+
+        # Parameter frame for better grouping (optional)
         para_frame = tk.Frame(self.page6)
-        para_frame.pack(pady=10)
-        # Window Size settings
+        para_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=20)
 
-        size_label = tk.Label(para_frame, text=self.get_text(
-            "Window(WxH):"))
-        size_label.grid(row=0, column=0, padx=5, pady=5)
+        # Configure grid inside para_frame
+        for i in range(4):
+            para_frame.grid_rowconfigure(i, weight=1, pad=8)
+        for j in range(4):
+            para_frame.grid_columnconfigure(j, weight=1, pad=8)
+
+        # Window size label and entries
+        size_label = tk.Label(para_frame, text=self.get_text("Window (WxH):"))
+        size_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
 
         self.width_entry = tk.Entry(para_frame)
         self.width_entry.insert(tk.END, str(self.default_width))
-        self.width_entry.grid(row=0, column=1, padx=5)
+        self.width_entry.grid(row=0, column=1, sticky="ew", padx=5)
 
         x_label = tk.Label(para_frame, text="x")
-        x_label.grid(row=0, column=2, padx=1)
+        x_label.grid(row=0, column=2, sticky="ew", padx=0)
 
         self.height_entry = tk.Entry(para_frame)
         self.height_entry.insert(tk.END, str(self.default_height))
-        self.height_entry.grid(row=0, column=3, padx=5)
+        self.height_entry.grid(row=0, column=3, sticky="ew", padx=5)
 
-        font_size_label = tk.Label(
-            para_frame, text=self.get_text("Font Size:"))
-        font_size_label.grid(row=1, column=0, padx=5, pady=5)
+        # Font size label and entry
+        font_size_label = tk.Label(para_frame, text=self.get_text("Font Size:"))
+        font_size_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+
         self.font_size_entry = tk.Entry(para_frame)
         self.font_size_entry.insert(tk.END, str(self.default_font_size))
-        self.font_size_entry.grid(row=1, column=1, padx=5)
+        self.font_size_entry.grid(row=1, column=1, sticky="ew", padx=5)
 
-        # Language selection (English/Chinese)
+        # Language selection label and combobox
         language_label = tk.Label(para_frame, text=self.get_text("Language:"))
-        language_label.grid(row=2, column=0, padx=5, pady=5)
+        language_label.grid(row=2, column=0, sticky="e", padx=5, pady=5)
 
         self.language_var = tk.StringVar(value=self.language)
         language_combobox = ttk.Combobox(
-            para_frame, textvariable=self.language_var, values=["en", "zh"], state="readonly")
-        language_combobox.grid(row=2, column=1, padx=5, pady=5)
+            para_frame, textvariable=self.language_var,
+            values=["en", "zh"], state="readonly"
+        )
+        language_combobox.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
-        # Save settings button
-        save_button = tk.Button(para_frame, text=self.get_text(
-            "Save Settings"), command=self.save_settings)
-        save_button.grid(row=3, column=0, columnspan=4, pady=20)
+        # Save button centered and spans all columns
+        save_button = tk.Button(
+            para_frame, text=self.get_text("Save Settings"),
+            command=self.save_settings
+        )
+        save_button.grid(row=3, column=0, columnspan=4, pady=(20, 10), sticky="ew")
+
 
     def constraint_window_size(self, new_width, new_height):
         # Ensure the window size maintains the aspect ratio and minimum width
@@ -578,7 +732,7 @@ class RemoteHostApp:
 
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
-            self.update_device_menu() 
+            self.update_device_menu()
             self.audio_module = AudioModule(self.ssh_client)
             self.remote_reset()
         except Exception as e:
@@ -747,7 +901,8 @@ class RemoteHostApp:
         self.record_device.set(new_mic_list[0])
 
     def analyze_audio(self):
-        self.log_text.insert(tk.END, self.get_text("Start audio analysis...") + "\n")
+        self.log_text.insert(tk.END, self.get_text(
+            "Start audio analysis...") + "\n")
         method = self.analysis_method.get()
         ref_audio = self.ref_audio_entry.get()
         target_audio = self.target_audio_entry.get()
@@ -768,13 +923,15 @@ class RemoteHostApp:
         try:
             result = self.audio_module.analyze_audio(
                 method, ref_audio, target_audio)
-            self.log_text.insert(tk.END, f"{self.get_text('Analysis Result')}: {result}\n")
+            self.log_text.insert(
+                tk.END, f"{self.get_text('Analysis Result')}: {result}\n")
             messagebox.showinfo(self.get_text("Analysis Result"),
                                 f"{self.get_text('Analysis Result')}: {result}")
         except Exception as e:
             messagebox.showerror(self.get_text("Error"),
                                  f"{self.get_text('Audio analysis failed')}: {str(e)}")
-            self.log_text.insert(tk.END, f"{self.get_text('Audio analysis failed')}: {str(e)}\n")
+            self.log_text.insert(
+                tk.END, f"{self.get_text('Audio analysis failed')}: {str(e)}\n")
 
     def restart_app(self):
         """
@@ -782,20 +939,22 @@ class RemoteHostApp:
         """
         python = sys.executable
         os.execl(python, python, *sys.argv)
-        
+
     def remote_reset(self):
         """
         Reset the remote host.
         """
         if self.ssh_client:
             self.ssh_client.reset(self.ssh_client)
-            self.log_text.insert(tk.END, self.get_text("Remote host reset successfully") + "\n")
+            self.log_text.insert(tk.END, self.get_text(
+                "Remote host reset successfully") + "\n")
             messagebox.showinfo(self.get_text("Success"),
                                 self.get_text("Remote host reset successfully"))
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
-        
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = RemoteHostApp(root)

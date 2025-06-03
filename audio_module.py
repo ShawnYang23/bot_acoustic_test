@@ -7,12 +7,15 @@ class AudioModule:
         self.ssh_client = ssh_client
         self.audio_dir_play = "/root/plays/"
         self.audio_dir_record = "/root/records/"
-        self.rate = 44100
+        self.rate = 48000
         self.channels = 2
         self.audio_format = "int16"
+        self.rec_dur_sec = 10 
         self.file_type = "wav"
         self.engine = "alsa"
         self.device = "speaker"
+        self.is_recording = False
+        self.is_playing = False
 
     def paras_settings(self, rate: int = 44100, channels: int = 2, audio_format: str = "S16_LE", file_type: str = "wav", engine: str = "alsa", device: str = "speaker"):
         """
