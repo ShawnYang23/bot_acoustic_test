@@ -16,11 +16,24 @@
 ```shell
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt update
-sudo apt install python3.11 -y
+sudo apt install python3.11 python3-pip sshpass rsync -y
 
+# method1: change the default python3 to python3.11
 sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 sudo update-alternatives --config python3
-
+# method2: with conda, create a new env
+curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+conda create -name 3.11 python=3.11 -y
+source $HOME/miniconda/bin/activate 3.11
+conda activate 3.11
+# method3: with pyenv, install python3.11
+curl https://pyenv.run | bash
+export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init --path)"
+eval "$(pyenv init -)"
+pyenv install 3.11.9
+pyenv global 3.11.9
 ```
 
 ## 2. Install requirement.txt
@@ -31,6 +44,8 @@ sudo update-alternatives --config python3
 
 ## 3. Init bot_acoustic_testing  tool
 ``` shell
-
-   ./run_test.py --init
+#1. CMD version
+./run_test.py --init
+#2. GUI version
+./ui.py 
 ```
