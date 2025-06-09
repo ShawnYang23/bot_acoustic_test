@@ -30,10 +30,10 @@ class SSHClient:
             self.ssh_transport = self.client.get_transport()
             self.scp_client = SCPClient(self.ssh_transport)
 
-            print(f"Connected to {self.hostname} as {self.username}")
+            print(f"[INFO]: Connected to {self.hostname} as {self.username}")
             return True
         except Exception as e:
-            print(f"Failed to connect: {e}")
+            print(f"[ERR]: Failed to connect: {e}")
             return False
         
     def is_connected(self):
@@ -50,9 +50,9 @@ class SSHClient:
         """
         if self.is_connected():
             self.close()
-            print(f"Disconnected from {self.hostname}")
+            print(f"[INFO]: Disconnected from {self.hostname}")
         else:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
 
         return not self.is_connected()
 
@@ -65,18 +65,18 @@ class SSHClient:
             # Get the output and error (if any)
             output = stdout.read().decode("utf-8").strip()
             error = stderr.read().decode("utf-8").strip()
-            # print(f"Executed command: {command}")
-            # print(f"Output: {output}")
-            # print(f"Error: {error}")
+            # print(f"[INFO]: Executed command: {command}")
+            # print(f"[INFO]: Output: {output}")
+            # print(f"[INFO]: Error: {error}")
             if error != "":
                 if output == "":
                     output = error
                 else:
-                    print(f"Remote cmd {command} failed with error: {error}")
+                    print(f"[ERR]: Remote cmd {command} failed with error: {error}")
                     return None
             return output
         except Exception as e:
-            print(f"Failed to execute command: {e}")
+            print(f"[ERR]: Failed to execute command: {e}")
             return None
 
     def upload_file(self, local_file, remote_path):
@@ -86,12 +86,12 @@ class SSHClient:
         try:
             if self.scp_client:
                 self.scp_client.put(local_file, remote_path)
-                print(f"File {local_file} uploaded to {remote_path}")
+                print(f"[INFO]: File {local_file} uploaded to {remote_path}")
             else:
                 print(
                     "SCP client not initialized. Ensure SSH connection is established.")
         except Exception as e:
-            print(f"Failed to upload file: {e}")
+            print(f"[ERR]: Failed to upload file: {e}")
 
     def download_file(self, remote_file, local_path):
         """
@@ -100,12 +100,12 @@ class SSHClient:
         try:
             if self.scp_client:
                 self.scp_client.get(remote_file, local_path)
-                print(f"File {remote_file} downloaded to {local_path}")
+                print(f"[INFO]: File {remote_file} downloaded to {local_path}")
             else:
                 print(
                     "SCP client not initialized. Ensure SSH connection is established.")
         except Exception as e:
-            print(f"Failed to download file: {e}")
+            print(f"[ERR]: Failed to download file: {e}")
 
     def close(self):
         """
@@ -116,9 +116,9 @@ class SSHClient:
                 self.scp_client.close()
             if self.client:
                 self.client.close()
-            print("Connection closed.")
+            print("[INFO]: Connection closed.")
         except Exception as e:
-            print(f"Error while closing connection: {e}")
+            print(f"[ERR]: Error while closing connection: {e}")
 
     def file_exists(self, remote_file):
         """
@@ -129,7 +129,7 @@ class SSHClient:
             output = self.execute_command(command)
             return "File exists" in output
         except Exception as e:
-            print(f"Failed to check file existence: {e}")
+            print(f"[ERR]: Failed to check file existence: {e}")
             return False
 
     def is_dir(self, remote_dir):
@@ -141,7 +141,7 @@ class SSHClient:
             output = self.execute_command(command)
             return "Directory exists" in output
         except Exception as e:
-            print(f"Failed to check directory existence: {e}")
+            print(f"[ERR]: Failed to check directory existence: {e}")
             return False
     
     def get_file_name_list(self, remote_dir) -> list:
@@ -150,7 +150,7 @@ class SSHClient:
         """
         try:
             if not self.is_dir(remote_dir):
-                print(f"Directory {remote_dir} does not exist.")
+                print(f"[ERR]: Directory {remote_dir} does not exist.")
                 return []
 
             command = f"ls {remote_dir}"
@@ -161,10 +161,10 @@ class SSHClient:
                     file_list[i] = os.path.join(remote_dir, file_list[i])
                 return file_list
             else:
-                print(f"No files found in directory {remote_dir}.")
+                print(f"[ERR]: No files found in directory {remote_dir}.")
                 return []
         except Exception as e:
-            print(f"Failed to get file list from {remote_dir}: {e}")
+            print(f"[ERR]: Failed to get file list from {remote_dir}: {e}")
             return []
 
     def reset(self, args):
@@ -201,11 +201,11 @@ class SSHClient:
         command = "aplay -l"
         output = self.execute_command(command)
         if output:
-            # print("Available speakers:")
+            # print("[INFO]: Available speakers:")
             # print(output)
             return self.parse_device_list(output, type="speaker")
         else:
-            print("Failed to retrieve speaker list.")
+            print("[ERR]: Failed to retrieve speaker list.")
             return None
 
     def parse_device_list(self, output: str, type: str) -> list:
@@ -233,11 +233,11 @@ class SSHClient:
         command = "arecord -l"
         output = self.execute_command(command)
         if output:
-            # print("Available microphones:")
+            # print("[INFO]: Available microphones:")
             # print(output)
             return self.parse_device_list(output, type="mic")
         else:
-            print("Failed to retrieve microphone list.")
+            print("[ERR]: Failed to retrieve microphone list.")
             return None
 
 
@@ -252,13 +252,13 @@ if __name__ == "__main__":
         # Execute a remote command
         output = ssh_client.execute_command("ls -l /tmp")
         if output:
-            print("Command output:", output)
+            print("[INFO]: Command output:", output)
 
         # # Upload a file (example)
         # ssh_client.upload_file("local_file.txt", "/tmp/remote_file.txt")
         output = ssh_client.get_mic_list()
         if output:
-            print("Available speakers:", output)
+            print("[INFO]: Available speakers:", output)
 
         # # Download a file (example)
         # ssh_client.download_file("/tmp/remote_file.txt", "downloaded_file.txt")

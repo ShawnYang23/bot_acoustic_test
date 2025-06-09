@@ -172,7 +172,7 @@ class RemoteHostApp:
     def clear_logs(self):
         # Clear the content in the Text widget
         self.log_text.delete(1.0, tk.END)
-        print("Logs cleared.")  # This message will appear in the log
+        print("[INFO]: Logs cleared.")  # This message will appear in the log
 
     def save_logs(self):
         # Get all the text in the Text widget
@@ -181,7 +181,7 @@ class RemoteHostApp:
             try:
                 # Get the path from the entry widget
                 file_path = self.save_path_entry.get()
-                print(f"Saving logs to: {file_path}")  # Log the save path
+                print(f"[INFO]: Saving logs to: {file_path}")  # Log the save path
                 if file_path.strip() == "" or file_path == "Enter file path to save logs...":
                     messagebox.showwarning(
                         "Invalid Path", "Please enter a valid file path.")
@@ -773,72 +773,62 @@ class RemoteHostApp:
 
     def upload_file(self):
         if self.ssh_client:
-            self.log_text.insert(tk.END, self.get_text(
-                "Uploading file...") + "\n")
+            print("[INFO]: Uploading file...") 
             src_path = self.upload_entry_src.get()
             if not os.path.exists(src_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Source file does not exist"))
-                self.log_text.insert(tk.END, self.get_text(
-                    "Source file does not exist") + "\n")
+                print("[ERR]: Source file does not exist") 
                 return
             dest_path = self.upload_entry_dest.get()
             if not self.ssh_client.is_dir(dest_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Destination path directory does not exist"))
-                self.log_text.insert(tk.END, self.get_text(
-                    "Destination path directory does not exist") + "\n")
+                print("[ERR]: Destination path directory does not exist") 
                 return
             try:
                 self.ssh_client.upload_file(src_path, dest_path)
-                self.log_text.insert(tk.END, self.get_text(
-                    "File uploaded successfully") + "\n")
+                print("[INFO]: File uploaded successfully") 
                 messagebox.showinfo(self.get_text("Success"),
                                     self.get_text("File uploaded successfully"))
             except Exception as e:
                 messagebox.showerror(self.get_text("Error"),
                                      f"{self.get_text('File upload failed')}: {str(e)}")
-                self.log_text.insert(tk.END, self.get_text(
-                    "File upload failed: ") + str(e) + "\n")
+                print("[ERR]: File upload failed: ") + str(e) 
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
 
     def download_file(self):
         if self.ssh_client:
-            self.log_text.insert(tk.END, self.get_text(
-                "Downloading file...") + "\n")
+            print("[INFO]: Downloading file...") 
             src_path = self.download_entry_src.get()
             if not self.ssh_client.file_exists(src_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Source file does not exist on remote host"))
-                self.log_text.insert(tk.END, self.get_text(
-                    "Source file does not exist on remote host") + "\n")
+                print("[ERR]: Source file does not exist on remote host") 
                 return
             dest_path = self.download_combobox_src.get()
             if not os.path.isdir(dest_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Destination path does not exist or is not a directory"))
-                self.log_text.insert(tk.END, self.get_text(
-                    "Destination path does not exist or is not a directory") + "\n")
+                print("[ERR]: Destination path does not exist or is not a directory") 
                 return
             try:
                 self.ssh_client.download_file(src_path, dest_path)
-                self.log_text.insert(tk.END, self.get_text(
-                    "File downloaded successfully") + "\n")
+                print("[INFO]: File downloaded successfully") 
                 messagebox.showinfo(self.get_text("Success"),
                                     self.get_text("File downloaded successfully"))
             except Exception as e:
                 messagebox.showerror(self.get_text("Error"),
                                      f"{self.get_text('File download failed')}: {str(e)}")
-                self.log_text.insert(tk.END, self.get_text(
-                    "File download failed: ") + str(e) + "\n")
+                print("[ERR]: File download failed: ") + str(e) 
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
     def toggle_playing(self):
         def stop_playing(self):
-            self.log_text.insert(tk.END, self.get_text("Playback stopped") + "\n")
+            print("[INFO]: Playback stopped") 
             if self.audio_module is not None:
                 ret = self.audio_module.stop_playing()
                 if ret:
@@ -864,7 +854,7 @@ class RemoteHostApp:
 
     def toggle_recording(self):
         def stop_recording(self):
-            self.log_text.insert(tk.END, self.get_text("Recording stopped") + "\n")
+            print("[INFO]: Recording stopped") 
             if self.audio_module is not None:
                 ret = self.audio_module.stop_recording()
                 if ret:
@@ -917,33 +907,33 @@ class RemoteHostApp:
             rec_sec= int(self.rec_dur.get() or 10)  # Default to 10 seconds if empty
         )
         # Start recording progress
-        self.log_text.insert(tk.END, self.get_text("Starting audio recording...") + "\n")
+        print("[INFO]: Starting audio recording...") 
         audio_dir_record = self.rec_path_combobox.get()
         if self.ssh_client.is_dir(audio_dir_record):
             # messagebox.showerror(self.get_text("Error"), self.get_text("Recording path is a directory, please specify a file path"))
-            self.log_text.insert(tk.END, self.get_text("Recording path is a directory, please specify a file path") + "\n")
+            print("[INFO]: Recording path is a directory, please specify a file path") 
             return False
         new_audio_dir = audio_dir_record
         ret,new_audio_dir = self.audio_module.record_audio(audio_dir_record)
         if new_audio_dir != audio_dir_record:
-            self.log_text.insert(tk.END, self.get_text(f"Audio recorded to {audio_dir_record}") + "\n")
+            print(f"[WARN]: Audio recorded to {audio_dir_record}") 
             self.rec_path_combobox.set(new_audio_dir)  # Update the path combobox to new recorded file
             messagebox.showinfo(self.get_text("warning"), f"{self.get_text('Audio recorded to')} {audio_dir_record}")
         # download the recorded file to local
         if ret is True:
-            self.log_text.insert(tk.END, self.get_text("Downloading recorded audio file to local dir: ./tmp/ ") + "\n")
+            print("[INFO]: Downloading recorded audio file to local dir: ./tmp/ ") 
             local_record_path = "./tmp/"
             if not os.path.exists(local_record_path):
                 os.makedirs(local_record_path)
             local_record_path = os.path.join(local_record_path, os.path.basename(new_audio_dir))
             try:
                 self.ssh_client.download_file(new_audio_dir, local_record_path)
-                self.log_text.insert(tk.END, self.get_text(f"Recorded audio file downloaded to {local_record_path}") + "\n")
+                print(f"[INFO]: Recorded audio file downloaded to {local_record_path}") 
                 # messagebox.showinfo(self.get_text("Success"), f"{self.get_text('Recorded audio file downloaded to')} {local_record_path}")
             except Exception as e:
                 messagebox.showerror(self.get_text("Error"),
                                      f"{self.get_text('Download failed')}: {str(e)}")
-                self.log_text.insert(tk.END, self.get_text("Download failed: ") + str(e) + "\n")
+                print("[ERR]: Download failed: ") + str(e) 
         return ret
 
     def audio_recorder_thread(self):
@@ -975,18 +965,18 @@ class RemoteHostApp:
             # after recording, update the UI
             def on_finish():
                 if ret:
-                    self.log_text.insert(tk.END, self.get_text("Recording completed successfully") + "\n")
+                    print("[INFO]: Recording completed successfully") 
                     messagebox.showinfo(self.get_text("Success"), self.get_text("Recording completed successfully"))
                     self.record_button.config(text=self.get_text("Start Recording"))
                 else:
-                    self.log_text.insert(tk.END, self.get_text("Recording failed") + "\n")
+                    print("[ERR]: Recording failed") 
                     messagebox.showerror(self.get_text("Error"), self.get_text("Recording failed"))
             self.record_progress.after(0, on_finish)
 
         threading.Thread(target=do_record).start() 
 
     def audio_player(self) -> bool:
-        self.log_text.insert(tk.END, self.get_text("Play recording...") + "\n")
+        print("[INFO]: Play recording...") 
         audio_file = self.file_path_combobox.get()
         if self.audio_module is None:
             messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
@@ -1005,7 +995,7 @@ class RemoteHostApp:
             if self.audio_module.rate != 48000:  # Loopback device requires a specific sample rate
                 print(f"[err]: Loopback device {play_device} requires sample rate 48000, but got {play_rate}.")
                 return False
-            self.log_text.insert(tk.END, self.get_text("Loopback device selected, playback will be looped.") + "\n")
+            print("[INFO]: Loopback device selected, playback will be looped.") 
             ret = self.audio_module.loopback_file_mode_start(audio_file)
         else:
              ret = self.audio_module.play_audio(audio_file)
@@ -1022,10 +1012,10 @@ class RemoteHostApp:
             expect_duration = 0
 
         # Default to 1 hour if duration is set < 0 
-        print(f"Expect duration: {expect_duration}")
         expect_duration = 3600 if expect_duration < 0 else expect_duration   # Default to 1 hour if invalid
+        print(f"[INFO]: Expect duration: {expect_duration}")
         
-        # print(f"WAV Info: {wav_info}")
+        # print(f"[INFO]: WAV Info: {wav_info}")
         file_dur_sec_float = float(wav_info['duration'])
         file_dur_sec = int(file_dur_sec_float) + 1 # Add 1 second buffer to avoid rounding issues
         total_sec = max(file_dur_sec, expect_duration)
@@ -1034,7 +1024,7 @@ class RemoteHostApp:
         channels = self.audio_module.channels = int(wav_info['channels'])
         sample_fmt = self.audio_module.audio_format = wav_info['sample_fmt']
         self.file_type.set('wav')  # Set file type from WAV info
-        print(f"Audio file: {self.file_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
+        print(f"[INFO]: Audio file: {self.file_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
               f"Duration: {total_sec} sec")
         self.play_progress_running = True
         device = self.play_device.get()
@@ -1051,7 +1041,7 @@ class RemoteHostApp:
                 self.update_progress(elapsed, total_sec, self.play_progress)
                 
                 if elapsed >= total_sec:
-                    self.log_text.insert(tk.END, self.get_text("Playback duration reached") + "\n")
+                    print(f"[INFO]: Playback duration total reached: {elapsed:.2f} sec")
                     self.play_progress_running = False
                     self.play_progress['value'] = 100
                     return
@@ -1070,7 +1060,7 @@ class RemoteHostApp:
                     ret = self.audio_player()
                     self.audio_module.play_dur_sec -= file_dur_sec 
                     if not ret:
-                        self.log_text.insert(tk.END, self.get_text("Playback failed") + "\n")
+                        print("[ERR]: Playback failed") 
                         break
             self.play_progress_running = False 
             self.play_progress.stop()
@@ -1078,10 +1068,10 @@ class RemoteHostApp:
             # after playback, update the UI
             def on_finish():
                 if ret:
-                    self.log_text.insert(tk.END, self.get_text("Playback completed successfully") + "\n")
+                    print("[INFO]: Playback completed successfully") 
                     messagebox.showinfo(self.get_text("Success"), self.get_text("Playback completed successfully"))
                 else:
-                    self.log_text.insert(tk.END, self.get_text("Playback failed") + "\n")
+                    print("[ERR]: Playback failed") 
                     messagebox.showerror(self.get_text("Error"), self.get_text("Playback failed"))
                 self.play_button.config(text=self.get_text("Start Playing"))
 
@@ -1090,12 +1080,11 @@ class RemoteHostApp:
         threading.Thread(target=do_play).start()
 
     def record_video(self):
-        self.log_text.insert(tk.END, self.get_text(
-            "Start video recording...") + "\n")
+        print("[INFO]: Start video recording...") 
         # TODO: Implement video recording
 
     def play_video(self):
-        self.log_text.insert(tk.END, self.get_text("Play video...") + "\n")
+        print("[INFO]: Play video...") 
         # TODO: Implement play video
 
     def update_device_menu(self, *args):
@@ -1136,19 +1125,18 @@ class RemoteHostApp:
         self.download_combobox_src.config(values=rec_menu)
         
     def analyze_audio(self):
-        self.log_text.insert(tk.END, self.get_text(
-            "Start audio analysis...") + "\n")
+        print("[INFO]: Start audio analysis...") 
         method = self.analysis_method.get()
         ref_audio = self.ref_audio_entry.get()
         target_audio = self.target_audio_entry.get()
 
         if not os.path.exists(ref_audio):
             messagebox.showerror(self.get_text("Error"), self.get_text("Reference audio file does not exist"))
-            self.log_text.insert(tk.END, self.get_text("Reference audio file does not exist") + "\n")
+            print("[ERR]: Reference audio file does not exist") 
             return
         if not os.path.exists(target_audio):
             messagebox.showerror(self.get_text("Error"), self.get_text("Target audio file does not exist"))
-            self.log_text.insert(tk.END, self.get_text("Target audio file does not exist") + "\n")
+            print("[ERR]: Target audio file does not exist") 
             return
 
         try:
@@ -1175,9 +1163,9 @@ class RemoteHostApp:
         """
         Refresh the UI to reflect any changes.
         """
-        self.log_text.insert(tk.END, self.get_text("Refreshing UI...") + "\n")
+        print("[INFO]: Refreshing UI...") 
         self.update_device_menu()
-        self.log_text.insert(tk.END, self.get_text("UI refreshed successfully") + "\n")
+        print("[INFO]: UI refreshed successfully") 
         messagebox.showinfo(self.get_text("Success"),
                             self.get_text("UI refreshed successfully"))
 
@@ -1187,8 +1175,7 @@ class RemoteHostApp:
         """
         if self.ssh_client:
             self.ssh_client.reset(self.ssh_client)
-            self.log_text.insert(tk.END, self.get_text(
-                "Remote host reset successfully") + "\n")
+            print("[INFO]: Remote host reset successfully")
             if 'mute' not in flag:
               messagebox.showinfo(self.get_text("Success"),
                                   self.get_text("Remote host reset successfully"))

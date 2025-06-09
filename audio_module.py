@@ -38,14 +38,14 @@ class AudioModule:
         """
         # check if ssh client is connected
         if self.ssh_client is None:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return None
         local_exists = os.path.exists(audio_file)
         audio_file_name = os.path.basename(audio_file)
         remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
         remote_exists = self.ssh_client.file_exists(remote_audio_file)
         if not local_exists and not remote_exists:
-            print(f"Audio file {audio_file} does not exist either locally or on the remote server.")
+            print(f"[ERR]: Audio file {audio_file} does not exist either locally or on the remote server.")
             return None
         
         # upload audio file to remote server if it does not exist        
@@ -66,7 +66,7 @@ class AudioModule:
                 info[key] = value
             return info
         else:
-            print("Failed to retrieve audio file information.")
+            print("[ERR]: Failed to retrieve audio file information.")
             return None
     
     def check_avaliable_paras(self, dev_type) -> bool:
@@ -78,11 +78,11 @@ class AudioModule:
         elif 'mic' in dev_type.lower():
            command = f"arecord -D {self.device} --dump-hw-params /dev/zero"
         else:
-            print(f"Unsupported device type: {dev_type}")
+            print(f"[ERR]: Unsupported device type: {dev_type}")
             return False  
         hw_output = self.ssh_client.execute_command(command)
         if hw_output is None:
-            print(f"Failed to check audio parameters for device {self.device}.")
+            print(f"[ERR]: Failed to check audio parameters for device {self.device}.")
             return False
         
         result = {}
@@ -111,13 +111,13 @@ class AudioModule:
                 result['RATE'] = {'min': nums[0], 'max': nums[0]}
         
         if self.audio_format.upper() not in result.get('FORMAT', []):
-            print(f"Unsupported audio format: {self.audio_format}. Supported formats: {result.get('FORMAT', [])}")
+            print(f"[ERR]: Unsupported audio format: {self.audio_format}. Supported formats: {result.get('FORMAT', [])}")
             return False
         if self.channels < result.get('CHANNELS', {}).get('min', 1) or self.channels > result.get('CHANNELS', {}).get('max', 2):
-            print(f"Unsupported number of channels: {self.channels}. Supported range: {result.get('CHANNELS', {}).get('min', 1)} - {result.get('CHANNELS', {}).get('max', 2)}")
+            print(f"[ERR]: Unsupported number of channels: {self.channels}. Supported range: {result.get('CHANNELS', {}).get('min', 1)} - {result.get('CHANNELS', {}).get('max', 2)}")
             return False
         if self.rate < result.get('RATE', {}).get('min', 8000) or self.rate > result.get('RATE', {}).get('max', 192000):
-            print(f"Unsupported sample rate: {self.rate}. Supported range: {result.get('RATE', {}).get('min', 8000)} - {result.get('RATE', {}).get('max', 192000)}")
+            print(f"[ERR]: Unsupported sample rate: {self.rate}. Supported range: {result.get('RATE', {}).get('min', 8000)} - {result.get('RATE', {}).get('max', 192000)}")
             return False
         return True  # all parameters are valid
         
@@ -127,7 +127,7 @@ class AudioModule:
         """
         # check if ssh client is connected
         if self.ssh_client is None:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return False
         # check if the audio file exists on the remote server
         audio_file_name = os.path.basename(audio_file)
@@ -138,9 +138,9 @@ class AudioModule:
         command = f"ffmpeg -i {remote_audio_file}"
         output = self.ssh_client.execute_command(command)
         if "Audio:" not in output:
-            print(f"File {remote_audio_file} is not a valid audio file.")
+            print(f"[ERR]: File {remote_audio_file} is not a valid audio file.")
             return False
-        # print(f"{output}")
+        # print(f"[INFO]: {output}")
     
         if self.engine == "alsa":
             if not self.check_avaliable_paras('speaker'):
@@ -149,20 +149,20 @@ class AudioModule:
         elif self.engine == "cras":
             cras_node = self.get_cras_node(self.device)
             if cras_node is None:
-                print(f"CRAS node for device {self.device} not found.")
+                print(f"[ERR]: CRAS node for device {self.device} not found.")
                 return False
             command = f"cras_test_client --select_output {cras_node} --playback_file {remote_audio_file} --rate {self.rate} --num_channels {self.channels} --duration_seconds {self.play_dur_sec}"
         else:
-            print(f"Unsupported engine: {self.engine}")
+            print(f"[ERR]: Unsupported engine: {self.engine}")
             return False
         
         output = self.ssh_client.execute_command(command)
 
         if output is not None:
-            print(f"Playing audio: {audio_file}")
+            print(f"[INFO]: Playing audio: {audio_file}")
             return True
         else:
-            print("Failed to play audio.")
+            print("[ERR]: Failed to play audio.")
             return False
         
     def get_cras_node(self, device: str, direction: str = "Output") -> str:
@@ -179,7 +179,7 @@ class AudioModule:
             output_section = cras_info.split("Output Devices:")[1].split("Output Nodes:")[0]
             node_id = re.findall(device_pattern, output_section)
             if not node_id:
-                print(f"No Speaker found with name {device_name}")
+                print(f"[ERR]: No Speaker found with name {device_name}")
                 return None
             else:
                 cras_card_node = node_id[0] + ":0"   
@@ -187,7 +187,7 @@ class AudioModule:
             input_section = cras_info.split("Input Devices:")[1].split("Input Nodes:")[0]
             node_id = re.findall(device_pattern, input_section)
             if not node_id:
-                print(f"No Micphones found with name {device_name}")
+                print(f"[ERR]: No Micphones found with name {device_name}")
                 return None
             else:
                 cras_card_node = node_id[0] + ":0"
@@ -198,28 +198,28 @@ class AudioModule:
         Stop the current audio playback.
         """
         if not self.is_playing:
-            print("No playback is in progress.")
+            print("[ERR]: No playback is in progress.")
             return False
-        print(f"Stopping playback for device {self.device}...")
+        print(f"[INFO]: Stopping playback for device {self.device}...")
         if self.is_loopback_device(self.device):
             # stop loopback mode if it is enabled
             ret = self.loopback_file_mode_stop()
             if not ret:
-                print("Failed to stop loopback mode.")
+                print("[ERR]: Failed to stop loopback mode.")
                 return False
             else:
                 self.is_playing = False
-                print("Playback stopped.")
+                print("[INFO]: Playback stopped.")
                 return True
         else:
             command = "pkill -f 'aplay|cras_test_client'"
             output = self.ssh_client.execute_command(command)
             if output is not None:
                 self.is_playing = False
-                print("Playback stopped.")
+                print("[INFO]: Playback stopped.")
                 return True
             else:
-                print("Failed to stop playback.")
+                print("[ERR]: Failed to stop playback.")
                 return False
     
     def stop_recording(self):
@@ -227,17 +227,17 @@ class AudioModule:
         Stop the current audio recording.
         """
         if not self.is_recording:
-            print("No recording is in progress.")
+            print("[ERR]: No recording is in progress.")
             return False
-        print(f"Stopping recording for device {self.device}...")
+        print(f"[INFO]: Stopping recording for device {self.device}...")
         command = "pkill -f 'arecord|cras_test_client'"
         output = self.ssh_client.execute_command(command)
         if output is not None:
             self.is_recording = False
-            print("Recording stopped.")
+            print("[INFO]: Recording stopped.")
             return True
         else:
-            print("Failed to stop recording.")
+            print("[ERR]: Failed to stop recording.")
             return False
     
     def record_audio(self, output_file: str):
@@ -245,7 +245,7 @@ class AudioModule:
         Record audio from the specified device and save it to the output file.
         """
         if not self.ssh_client:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return False, output_file            
         # check if the output file exists on the remote server
         remote_output_file = os.path.join(self.audio_dir_record, os.path.basename(output_file))
@@ -257,7 +257,7 @@ class AudioModule:
         output_file = remote_output_file
         # check if the output file already exists
         if self.ssh_client.file_exists(remote_output_file):
-            print(f"Output file {remote_output_file} already exists.")
+            print(f"[WARN]: Output file {remote_output_file} already exists.")
             return False, output_file
         
         if self.engine == "alsa":
@@ -267,11 +267,11 @@ class AudioModule:
         elif self.engine == "cras":
             cras_node = self.get_cras_node(self.device, direction="Input")
             if cras_node is None:
-                print(f"CRAS node for device {self.device} not found.")
+                print(f"[ERR]: CRAS node for device {self.device} not found.")
                 return False, output_file
             command = f"cras_test_client --select_input {cras_node} --duration_seconds {self.rec_dur_sec} --record_file {remote_output_file}"
         else:
-            print(f"Unsupported engine: {self.engine}")
+            print(f"[ERR]: Unsupported engine: {self.engine}")
             return False, output_file
         
         # device vibemicarray has conflict with device Loopback,0 because of vibe-dsp-server
@@ -283,10 +283,10 @@ class AudioModule:
             output = self.ssh_client.execute_command(command)
 
         if output is not None:
-            print(f"Recording audio to: {output_file}")
+            print(f"[INFO]: Recording audio to: {output_file}")
             return True, output_file
         else:
-            print("Failed to record audio.")
+            print("[ERR]: Failed to record audio.")
             return False, output_file
         
     def analyze_audio(self, audio_file: str, method: str = "PESQ"):
@@ -294,11 +294,11 @@ class AudioModule:
         Analyze the audio file and return its properties.
         """
         if not os.path.exists(audio_file):
-            print(f"Audio file {audio_file} does not exist.")
+            print(f"[ERR]: Audio file {audio_file} does not exist.")
             return None
         # check if ssh client is connected
         if not self.ssh_client.is_connected():
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return None
         # check if the audio file exists on the remote server
         audio_file_name = os.path.basename(audio_file)
@@ -321,7 +321,7 @@ class AudioModule:
         elif method == "Spectrum":
             pass
         else:
-            print(f"Unsupported analysis method: {method}")
+            print(f"[ERR]: Unsupported analysis method: {method}")
             return None
     
     def is_loopback_device(self, device) -> bool:
@@ -341,7 +341,7 @@ class AudioModule:
         """
         # check if ssh client is connected
         if self.ssh_client is None:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return False
         # check if the audio file exists on the remote server
         audio_file_name = os.path.basename(audio_file)
@@ -352,17 +352,17 @@ class AudioModule:
         command = f"ffmpeg -i {remote_audio_file}"
         output = self.ssh_client.execute_command(command)
         if "Audio:" not in output:
-            print(f"File {remote_audio_file} is not a valid audio file.")
+            print(f"[ERR]: File {remote_audio_file} is not a valid audio file.")
             return False
 
         # prepare loopback mode command
         command = f"vibe_dsp_client -c 'mode file {remote_audio_file}'"
         output = self.ssh_client.execute_command(command)
         if output is not None:
-            print(f"Loopback file mode satrt executed successfully.")
+            print(f"[INFO]: Loopback file mode satrt executed successfully.")
             return True
         else:
-            print(f"Failed to execute loopback file mode start.")
+            print(f"[ERR]: Failed to execute loopback file mode start.")
             return False
 
     def loopback_file_mode_stop(self) -> bool:
@@ -371,23 +371,23 @@ class AudioModule:
         """
         # check if ssh client is connected
         if self.ssh_client is None:
-            print("SSH client is not connected.")
+            print("[ERR]: SSH client is not connected.")
             return False
         # stop loopback mode
         command = "vibe_dsp_client -c close"
         output = self.ssh_client.execute_command(command)
         if output is not None:
-            print("Loopback mode stopped successfully.")
+            print("[INFO]: Loopback mode stopped successfully.")
             return True
         else:
-            print("Failed to stop loopback mode.")
+            print("[ERR]: Failed to stop loopback mode.")
             return False 
         
 if __name__ == "__main__":
     # Example usage
     ssh_client = SSHClient(hostname="192.168.50.140", username="root", password="test0000")
     if not ssh_client.connect():
-        print("Failed to connect to the remote host.")
+        print("[ERR]: Failed to connect to the remote host.")
         exit(1)
     audio_module = AudioModule(ssh_client)
     
@@ -397,6 +397,6 @@ if __name__ == "__main__":
     # Play an audio file
     # audio_module.play_audio("path/to/audio/file.wav")
     cras_node = audio_module.get_cras_node("hw:Loopback,0", direction="Input")
-    print(f"CRAS Node: {cras_node}")
+    print(f"[INFO]: CRAS Node: {cras_node}")
             
         
