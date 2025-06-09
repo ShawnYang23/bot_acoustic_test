@@ -35,6 +35,26 @@ class SSHClient:
         except Exception as e:
             print(f"Failed to connect: {e}")
             return False
+        
+    def is_connected(self):
+        """
+        Check if the SSH client is connected.
+        """
+        if self.client and self.client.get_transport() and self.client.get_transport().is_active():
+            return True
+        return False
+    
+    def disconnect(self):
+        """
+        Disconnect the SSH client if connected.
+        """
+        if self.is_connected():
+            self.close()
+            print(f"Disconnected from {self.hostname}")
+        else:
+            print("SSH client is not connected.")
+
+        return not self.is_connected()
 
     def execute_command(self, command):
         """
@@ -43,11 +63,17 @@ class SSHClient:
         try:
             stdin, stdout, stderr = self.client.exec_command(command)
             # Get the output and error (if any)
-            output = stdout.read().decode("utf-8")
-            error = stderr.read().decode("utf-8")
-
-            if error:
-                print(f"Error: {error}")
+            output = stdout.read().decode("utf-8").strip()
+            error = stderr.read().decode("utf-8").strip()
+            # print(f"Executed command: {command}")
+            # print(f"Output: {output}")
+            # print(f"Error: {error}")
+            if error != "":
+                if output == "":
+                    output = error
+                else:
+                    print(f"Remote cmd {command} failed with error: {error}")
+                    return None
             return output
         except Exception as e:
             print(f"Failed to execute command: {e}")
@@ -117,6 +143,29 @@ class SSHClient:
         except Exception as e:
             print(f"Failed to check directory existence: {e}")
             return False
+    
+    def get_file_name_list(self, remote_dir) -> list:
+        """
+        Get a list of files in a directory on the remote server.
+        """
+        try:
+            if not self.is_dir(remote_dir):
+                print(f"Directory {remote_dir} does not exist.")
+                return []
+
+            command = f"ls {remote_dir}"
+            output = self.execute_command(command)
+            if output:
+                file_list = output.split()
+                for i in range(len(file_list)):
+                    file_list[i] = os.path.join(remote_dir, file_list[i])
+                return file_list
+            else:
+                print(f"No files found in directory {remote_dir}.")
+                return []
+        except Exception as e:
+            print(f"Failed to get file list from {remote_dir}: {e}")
+            return []
 
     def reset(self, args):
         """

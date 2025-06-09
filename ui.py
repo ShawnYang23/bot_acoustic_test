@@ -2,11 +2,11 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter import filedialog
-import paramiko
 import threading
 import os
 import sys
 import io
+import time
 
 from ssh_client import SSHClient
 from audio_module import AudioModule
@@ -16,15 +16,16 @@ class RemoteHostApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Remote Host Manager")
-        self.root.geometry("960x540")  # Default window size
+        self.default_width = 1920
+        self.default_height = 1080
+        self.root.geometry(f"{self.default_width}x{self.default_height}")
 
         # Default settings
-        self.default_width = 960
-        self.default_height = 540
-        # only support 16:9 aspect ratio
-        self.default_aspect_ratio = (16, 9)
+        self.default_aspect_ratio = (16, 9) # only support 16:9 aspect ratio
         self.min_width = 640
         self.max_width = 1920  # Maximum width for the window
+        self.default_speaker = "rockchipad82178"
+        self.default_mic = "vibemicarray"
 
         self.default_font_size = 12
         self.language = "en"  # Default language is English
@@ -41,50 +42,50 @@ class RemoteHostApp:
         self.navbar.pack(fill="both", expand=True)
 
         # Page 1 - SSH connection information
-        self.page1 = ttk.Frame(self.navbar)
-        self.navbar.add(self.page1, text=self.get_text("SSH"))
+        self.page_home = ttk.Frame(self.navbar)
+        self.navbar.add(self.page_home, text=self.get_text("SSH"))
 
         # Page 3 - File management (Upload/Download)
-        self.page3 = ttk.Frame(self.navbar)
-        self.navbar.add(self.page3, text=self.get_text("Files"))
+        self.page_flies = ttk.Frame(self.navbar)
+        self.navbar.add(self.page_flies, text=self.get_text("Files"))
 
         # Page 4 - Audio recording/playback
-        self.page4 = ttk.Frame(self.navbar)
-        self.navbar.add(self.page4, text=self.get_text("Audio"))
+        self.page_aduios = ttk.Frame(self.navbar)
+        self.navbar.add(self.page_aduios, text=self.get_text("Audio"))
 
         # Page 5 - Video recording/playback
-        self.page5 = ttk.Frame(self.navbar)
-        self.navbar.add(self.page5, text=self.get_text("Video"))
+        self.page_videos = ttk.Frame(self.navbar)
+        self.navbar.add(self.page_videos, text=self.get_text("Video"))
 
         # Page 6 - Settings page
-        self.page6 = ttk.Frame(self.navbar)
-        self.navbar.add(self.page6, text=self.get_text("Settings"))
+        self.page_setings = ttk.Frame(self.navbar)
+        self.navbar.add(self.page_setings, text=self.get_text("Settings"))
 
         # Setup pages
-        self.setup_page1()
-        self.setup_page3()
-        self.setup_page4()
-        self.setup_page5()
-        self.setup_page6()
+        self.setup_page_home()
+        self.setup_page_flies()
+        self.setup_page_aduios()
+        self.setup_page_videos()
+        self.setup_page_setings()
 
-    def setup_page1(self):
+    def setup_page_home(self):
         # Clear page elements
-        for widget in self.page1.winfo_children():
+        for widget in self.page_home.winfo_children():
             widget.destroy()
 
-        # Configure row and column weights for page1 to enable resizing
+        # Configure row and column weights for page_home to enable resizing
         for i in range(10):  # enough rows
-            self.page1.grid_rowconfigure(i, weight=1)
+            self.page_home.grid_rowconfigure(i, weight=1)
         for j in range(8):   # enough columns
-            self.page1.grid_columnconfigure(j, weight=1)
+            self.page_home.grid_columnconfigure(j, weight=1)
 
         # Top label
-        label = tk.ttk.Label(self.page1, text=self.get_text("Home Page"),
+        label = tk.ttk.Label(self.page_home, text=self.get_text("Home Page"),
                             font=("Arial", self.default_font_size))
         label.grid(row=0, column=0, columnspan=8, pady=10, sticky="nsew")
 
         # ssh_frame container and layout configuration
-        ssh_frame = tk.Frame(self.page1, relief=tk.GROOVE, borderwidth=2)
+        ssh_frame = tk.Frame(self.page_home, relief=tk.GROOVE, borderwidth=2)
         ssh_frame.grid(row=1, column=0, columnspan=2, rowspan=9,
                     padx=10, pady=10, sticky="nsew")
         # Configure grid weights inside ssh_frame
@@ -115,31 +116,28 @@ class RemoteHostApp:
         self.password_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         # Connect button
-        connect_button = tk.Button(ssh_frame, text=self.get_text("Connect"),
-                                command=self.connect_to_ssh)
-        connect_button.grid(row=3, column=0, columnspan=2,
-                            pady=10, sticky="nsew", padx=5)
+        self.connect_button = tk.Button(ssh_frame, text=self.get_text("Connect"), command=self.connect_to_ssh)
+        self.connect_button.grid(row=3, column=0, pady=10, sticky="ew", padx=5)
+        
+        # Disconnect button
+        self.disconnect_button = tk.Button(ssh_frame, text=self.get_text("Disconn"), command=self.disconnect_from_ssh)
+        self.disconnect_button.grid(row=3, column=1, sticky="ew", padx=5, pady=10)
 
         # Status label
-        self.status_label = tk.Label(ssh_frame, text=self.get_text("Status: Not connected"),
-                                    fg="red")
-        self.status_label.grid(row=4, column=0, columnspan=2,
-                            pady=10, sticky="nsew", padx=5)
+        self.status_label = tk.Label(ssh_frame, text=self.get_text("Status: Not connected"), fg="red")
+        self.status_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew", padx=5)
 
         # Remote Reset button
-        reset_button = tk.Button(ssh_frame, text=self.get_text("Remote Reset"),
-                                command=self.remote_reset)
+        reset_button = tk.Button(ssh_frame, text=self.get_text("Remote Reset"), command=self.remote_reset)
         reset_button.grid(row=5, column=0, sticky="ew", padx=5, pady=10)
 
         # UI Refresh button
-        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("UI Fresh"),
-                                    command=self.restart_app)
+        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("UI Fresh"), command=self.refresh_ui)
         ui_fresh_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
 
         # log_frame and its internal widgets
-        self.log_frame = tk.Frame(self.page1, relief=tk.SUNKEN, borderwidth=2)
-        self.log_frame.grid(row=1, column=3, columnspan=5, rowspan=6,
-                            padx=10, pady=10, sticky="nsew")
+        self.log_frame = tk.Frame(self.page_home, relief=tk.SUNKEN, borderwidth=2)
+        self.log_frame.grid(row=1, column=3, columnspan=5, rowspan=6, padx=10, pady=10, sticky="nsew")
         self.log_frame.grid_rowconfigure(0, weight=1)
         self.log_frame.grid_columnconfigure(0, weight=1)
 
@@ -150,7 +148,7 @@ class RemoteHostApp:
         sys.stdout = self.RedirectText(self.log_text)
 
         # log_ctl_frame and layout
-        log_ctl_frame = tk.Frame(self.page1)
+        log_ctl_frame = tk.Frame(self.page_home)
         log_ctl_frame.grid(row=7, column=3, columnspan=5,
                         padx=10, pady=10, sticky="ew")
         for j in range(3):
@@ -209,27 +207,27 @@ class RemoteHostApp:
             self.text_widget.insert("end", message)
             self.text_widget.yview("end")  # Auto scroll to the end
 
-    def setup_page3(self):
-        # Clear all widgets on page3
-        for widget in self.page3.winfo_children():
+    def setup_page_flies(self):
+        # Clear all widgets on page_flies
+        for widget in self.page_flies.winfo_children():
             widget.destroy()
 
-        # Configure grid weights for page3 for responsiveness
+        # Configure grid weights for page_flies for responsiveness
         for i in range(10):  # enough rows
-            self.page3.grid_rowconfigure(i, weight=1)
+            self.page_flies.grid_rowconfigure(i, weight=1)
         for j in range(2):  # 2 columns enough
-            self.page3.grid_columnconfigure(j, weight=1)
+            self.page_flies.grid_columnconfigure(j, weight=1)
 
         # Title label for file operations
         file_operations_label = tk.Label(
-            self.page3, text=self.get_text("File Upload/Download"),
+            self.page_flies, text=self.get_text("File Upload/Download"),
             font=("Arial", self.default_font_size)
         )
         file_operations_label.grid(row=0, column=0, columnspan=2, pady=10, sticky="nsew")
 
         # Upload Frame setup
         upload_frame = tk.LabelFrame(
-            self.page3, text="Upload File", padx=10, pady=10
+            self.page_flies, text="Upload File", padx=10, pady=10
         )
         upload_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
@@ -249,7 +247,7 @@ class RemoteHostApp:
         update_src_label = tk.Label(upload_frame, text=self.get_text("Source Path:"))
         update_src_label.grid(row=1, column=0, pady=5, sticky="e")
         self.upload_entry_src = tk.Entry(upload_frame)
-        self.upload_entry_src.insert(tk.END, "/tmp/")  # Default source path
+        self.upload_entry_src.insert(tk.END, "./tmp/")  # Default source path
         self.upload_entry_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Upload destination path label and entry
@@ -261,7 +259,7 @@ class RemoteHostApp:
 
         # Download Frame setup
         download_frame = tk.LabelFrame(
-            self.page3, text="Download File", padx=10, pady=10
+            self.page_flies, text="Download File", padx=10, pady=10
         )
         download_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
@@ -280,234 +278,252 @@ class RemoteHostApp:
         # Download source path label and entry
         download_src_label = tk.Label(download_frame, text=self.get_text("Source Path:"))
         download_src_label.grid(row=1, column=0, pady=5, sticky="e")
-        self.download_entry_src = tk.Entry(download_frame)
-        self.download_entry_src.insert(tk.END, "/root/records/")  # Default source path
-        self.download_entry_src.grid(row=1, column=1, pady=5, sticky="ew")
+        self.download_var = tk.StringVar(value="/root/records/")  # Default destination path
+        self.download_combobox_src = ttk.Combobox(download_frame, textvariable=self.download_var)
+        self.download_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Download destination path label and entry
         download_dest_label = tk.Label(download_frame, text=self.get_text("Destination Path:"))
         download_dest_label.grid(row=2, column=0, pady=5, sticky="e")
         self.download_entry_dest = tk.Entry(download_frame)
-        self.download_entry_dest.insert(tk.END, "/tmp/")  # Default destination path
+        self.download_entry_dest.insert(tk.END, "./tmp/")  # Default destination path
         self.download_entry_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
 
-    def setup_page4(self):
+    def setup_page_aduios(self):
         # Clear page elements
-        for widget in self.page4.winfo_children():
+        for widget in self.page_aduios.winfo_children():
             widget.destroy()
-
-        # Configure page4 grid layout
-        for i in range(5):  
-            self.page4.grid_rowconfigure(i, weight=1)
-        for j in range(4):  
-            self.page4.grid_columnconfigure(j, weight=1)
-
-        # page4 label
-        record_play_label = tk.Label(self.page4, text=self.get_text(
-            "Audio"), font=("Arial", self.default_font_size))
-        record_play_label.grid(
-            row=0, column=0, columnspan=4, rowspan=2, pady=10, sticky="nsew")
-
-        # Basic audio parameters settings
-        self.audio_settings_frame = tk.LabelFrame(
-            self.page4, text="Audio Settings", padx=10, pady=10)
-        self.audio_settings_frame.grid(
-            row=2, column=0, padx=10, pady=10, sticky="nsew", columnspan=2, rowspan=2)
-
-        # configure audio_settings_frame grid layout
-        for i in range(5):
+        
+        #### Configure grid weights for page_aduios to make it responsive
+        ### Page-Header
+        header_rows = 1
+        header_cols = 10
+        record_play_label = tk.Label(self.page_aduios, text=self.get_text("Audio"), font=("Arial", self.default_font_size))
+        record_play_label.grid(row=0, column=0, rowspan=header_rows, columnspan=header_cols, pady=1, sticky="nsew")
+        ### Page-Parameters
+        paras_rows = 8
+        paras_cols = 4
+        self.audio_settings_frame = tk.LabelFrame(self.page_aduios, text="Audio Settings", padx=10, pady=10)
+        self.audio_settings_frame.grid(row=header_rows, column=0, rowspan=paras_rows, columnspan=paras_cols, padx=2, pady=1, sticky="nsew")
+        ### Page-Recorder
+        rec_rows = 4
+        rec_clos = 6
+        self.record_frame = tk.LabelFrame(self.page_aduios, text="Audio Recorder", padx=10, pady=10)
+        self.record_frame.grid(row=header_rows, column=paras_cols, rowspan=rec_rows, columnspan=rec_clos, padx=2, pady=1, sticky="nsew")
+        ### Page-Player
+        play_rows = 4
+        play_cols = 6
+        self.play_frame = tk.LabelFrame(self.page_aduios, text="Audio Player", padx=10, pady=10)
+        self.play_frame.grid(row=header_rows+rec_rows, column=paras_cols, rowspan=play_rows, columnspan=play_cols, padx=2, pady=1, sticky="nsew")
+        ### Page-Analyzer
+        ana_rows = 4
+        ana_cols = 10
+        self.analysis_frame = tk.LabelFrame(self.page_aduios, text="Audio Analyzer", padx=10, pady=10)
+        self.analysis_frame.grid(row=header_rows+rec_rows+play_rows, column=0, rowspan=ana_rows, columnspan=ana_cols, padx=2, pady=1, sticky="nsew")
+   
+        # Configure page_aduios grid layout
+        whole_rows = header_rows + paras_rows + ana_rows
+        whole_columns = paras_cols + rec_clos 
+        for i in range(whole_rows - 1):
+            self.page_aduios.grid_rowconfigure(i, weight=1)
+        for j in range(whole_columns - 1):  
+            self.page_aduios.grid_columnconfigure(j, weight=1)
+            
+        ## Frame-Header
+        pass
+        ## Frame-Parameters
+        # Configure audio_settings_frame grid layout
+        for i in range(paras_rows - 1):
             self.audio_settings_frame.grid_rowconfigure(i, weight=1)
-        for j in range(2):
+        for j in range(paras_cols - 1):
             self.audio_settings_frame.grid_columnconfigure(j, weight=1)
-
+        
+        self.audio_settings_frame.grid_columnconfigure(0, weight=4)
+        self.audio_settings_frame.grid_columnconfigure(1, weight=4)
         # Sampling rate settings
-        self.sampling_rate_label = tk.Label(
-            self.audio_settings_frame, text="Sampling Rate:")
+        self.sampling_rate_label = tk.Label(self.audio_settings_frame, text="Rate:")
         self.sampling_rate_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.sampling_rate = tk.StringVar(value="48000")
-        self.sampling_rate_entry = tk.Entry(
-            self.audio_settings_frame, textvariable=self.sampling_rate)
-        self.sampling_rate_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.sampling_rate_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.sampling_rate,
+                                                    values=["8000", "16000", "44100", "48000", "96000"],
+                                                    state="readonly")
+        self.sampling_rate_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # Channels settings
-        self.channels_label = tk.Label(
-            self.audio_settings_frame, text="Channels:")
+        self.channels_label = tk.Label(self.audio_settings_frame, text="Chns:")
         self.channels_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.channels = tk.StringVar(value="2")
-        self.channels_entry = tk.Entry(
-            self.audio_settings_frame, textvariable=self.channels)
-        self.channels_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.channels_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.channels,
+                                            values=["1", "2", "6", "8"], state="readonly")
+        self.channels_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
         # Data type settings
-        self.data_type_label = tk.Label(
-            self.audio_settings_frame, text="Data Type:")
+        self.data_type_label = tk.Label(self.audio_settings_frame, text="Fmt:")
         self.data_type_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.data_type = tk.StringVar(value="S16_LE")
-        self.data_type_entry = tk.Entry(
-            self.audio_settings_frame, textvariable=self.data_type)
-        self.data_type_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-
-        # Engine selection (alsa/cras)
-        self.engine_label = tk.Label(self.audio_settings_frame, text="Engine:")
-        self.engine_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        self.engine = tk.StringVar(value="alsa")
-        self.engine_combobox = tk.OptionMenu(
-            self.audio_settings_frame, self.engine, "alsa", "cras")
-        self.engine_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        self.data_type_entry = ttk.Combobox(self.audio_settings_frame, textvariable=self.data_type,
+                                            values=["S16_LE", "S24_LE", "S32_LE", "FLOAT_LE"],
+                                            state="readonly")
+        self.data_type_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
         # File type selection (wav/pcm)
-        self.file_type_label = tk.Label(
-            self.audio_settings_frame, text="File Type:")
-        self.file_type_label.grid(row=4, column=0, padx=5, pady=5, sticky="w")
+        self.file_type_label = tk.Label(self.audio_settings_frame, text="Type:")
+        self.file_type_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.file_type = tk.StringVar(value="wav")
-        self.file_type_combobox = tk.OptionMenu(
-            self.audio_settings_frame, self.file_type, "wav", "pcm")
-        self.file_type_combobox.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
+        self.file_type_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.file_type,
+                                                  values=["wav", "pcm"], state="readonly")
+        self.file_type_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
-        # Audio recording module
-        self.record_frame = tk.LabelFrame(self.page4, text="Record Audio", padx=10, pady=10)
-        self.record_frame.grid(row=2, column=3, padx=20, pady=10, sticky="nsew")
-
-        # configure record_frame grid layout
-        for i in range(4):
-            self.record_frame.grid_columnconfigure(i, weight=1)
-        for i in range(3):
+        ## Frame-Recorder
+        # Configure record_frame grid layout
+        for i in range(rec_rows - 1):
             self.record_frame.grid_rowconfigure(i, weight=1)
+        for i in range(rec_clos - 1):
+            self.record_frame.grid_columnconfigure(i, weight=1)
 
         # === Row 0: Device selection and rec duration ===
-        self.record_device_label = tk.Label(self.record_frame, text="Recording Device:")
-        self.record_device_label.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="e")
+        # Device
+        self.record_device_label = tk.Label(self.record_frame, text="Device:")
+        self.record_device_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")  
 
         self.record_device = tk.StringVar(value="Default")
-        self.record_device.trace_add("write", self.update_device_menu)
+        self.record_device_combobox = ttk.Combobox(
+            self.record_frame, textvariable=self.record_device,
+            values=["Default", "menu", "none"], state="readonly"
+        )
+        self.record_device_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")  
 
-        self.record_device_combobox = tk.OptionMenu(self.record_frame, self.record_device, "menu", "none")
-        self.record_device_combobox.grid(row=0, column=1, padx=(0, 15), pady=5, sticky="w")
+        # Engine
+        self.rec_engine_label = tk.Label(self.record_frame, text="Engine:")
+        self.rec_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.rec_dur_label = tk.Label(self.record_frame, text="Rec Duration (sec):")
-        self.rec_dur_label.grid(row=0, column=2, padx=(0, 5), pady=5, sticky="e")
+        self.rec_engine = tk.StringVar(value="alsa")
+        self.rec_engine_combobox = ttk.Combobox(
+            self.record_frame, textvariable=self.rec_engine,
+            values=["alsa", "cras"], state="readonly"
+        )
+        self.rec_engine_combobox.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
+
+        # Duration
+        self.rec_dur_label = tk.Label(self.record_frame, text="Duration(s):")
+        self.rec_dur_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
 
         self.rec_dur = tk.StringVar(value="10")
-        self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur, width=5)
-        self.rec_dur_entry.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur)
+        self.rec_dur_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
 
         # === Row 1: Progress Bar ===
         self.record_progress = ttk.Progressbar(self.record_frame, orient="horizontal", length=400, mode="determinate")
-        self.record_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+        self.record_progress.grid(row=1, column=0, columnspan=6, padx=5, pady=(0, 10), sticky="nsew")
 
         # === Row 2: Start/Stop Button + Path Entry ===
         self.is_recording = False
-        self.record_button = tk.Button(
-            self.record_frame,
-            text=self.get_text("Start Recording"),
-            command=self.record_audio
-        )
+        self.record_button = tk.Button(self.record_frame, text=self.get_text("Start Recording"), command=self.toggle_recording)
         self.record_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
-        self.rec_path_entry = tk.Entry(self.record_frame, width=50)
-        self.rec_path_entry.insert(tk.END, "/root/records/")
-        self.rec_path_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+        self.rec_path_var = tk.StringVar(value="/root/records/")  # Default path for recording
+        self.rec_path_combobox = ttk.Combobox(self.record_frame, textvariable=self.rec_path_var)
+        self.rec_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
+        ## Frame-Player
 
-        # Audio playback module
-        self.play_frame = tk.LabelFrame(self.page4, text="Audio Playback", padx=10, pady=10)
-        self.play_frame.grid(row=3, column=3, padx=20, pady=10, sticky="nsew")
-
-        # configure play_frame grid layout
-        for i in range(4):
-            self.play_frame.grid_columnconfigure(i, weight=1)
-        for i in range(3):
+        # Configure play_frame grid layout
+        for i in range(play_rows - 1):
             self.play_frame.grid_rowconfigure(i, weight=1)
-
+        for i in range(play_cols - 1):
+            self.play_frame.grid_columnconfigure(i, weight=1)
         # === Row 0: Playback Device Selector + Duration display ===
-        self.play_deviece_label = tk.Label(self.play_frame, text="Playback Device:")
-        self.play_deviece_label.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="e")
+        # Device
+        self.play_deviece_label = tk.Label(self.play_frame, text="Device:")
+        self.play_deviece_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
 
         self.play_device = tk.StringVar(value="Default")
-        self.play_device.trace_add("write", self.update_device_menu)
+        self.play_device_combobox = ttk.Combobox(
+            self.play_frame, textvariable=self.play_device,
+            values=["Default", "menu", "none"], state="readonly"
+        )
+        self.play_device_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        self.play_device_combobox = tk.OptionMenu(self.play_frame, self.play_device, "menu", "none")
-        self.play_device_combobox.grid(row=0, column=1, padx=(0, 15), pady=5, sticky="w")
+        # Engine
+        self.play_engine_label = tk.Label(self.play_frame, text="Engine:")
+        self.play_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.play_duration_static_label = tk.Label(self.play_frame, text="Duration:")
-        self.play_duration_static_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        self.play_engine = tk.StringVar(value="cras")
+        self.play_engine_combobox = ttk.Combobox(
+            self.play_frame, textvariable=self.play_engine,
+            values=["alsa", "cras"], state="readonly"
+        )
+        self.play_engine_combobox.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
 
-        self.play_duration_value = tk.StringVar(value="0.0 sec")
-        self.play_duration_label = tk.Label(self.play_frame, textvariable=self.play_duration_value)
-        self.play_duration_label.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        # Duration
+        self.play_duration_static_label = tk.Label(self.play_frame, text="Duration(s):")
+        self.play_duration_static_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
+
+        self.play_duration_value = tk.StringVar(value="")
+        self.play_duration_entry = tk.Entry(self.play_frame, textvariable=self.play_duration_value)
+        self.play_duration_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
 
         # === Row 1: Progress Bar ===
         self.play_progress = ttk.Progressbar(self.play_frame, orient="horizontal", length=400, mode="determinate")
-        self.play_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+        self.play_progress.grid(row=1, column=0, columnspan=6, padx=5, pady=(0, 10), sticky="nsew")
 
         # === Row 2: Start/Stop Button + File Path Entry ===
         self.is_playing = False
-        self.play_button = tk.Button(
-            self.play_frame,
-            text=self.get_text("Start Playing"),
-            command=self.play_audio
-        )
+        self.play_button = tk.Button(self.play_frame, text=self.get_text("Start Playing"), command=self.toggle_playing)
         self.play_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
+        
+        self.plays_file_path_var = tk.StringVar(value="/root/plays/")  # Default path for playback
+        self.file_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.plays_file_path_var)
+        self.file_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
-        self.file_path_entry = tk.Entry(self.play_frame, width=50)
-        self.file_path_entry.insert(tk.END, "/root/plays/")
-        self.file_path_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
-
-        # audio analysis module
-        self.analysis_frame = tk.LabelFrame(
-            self.page4, text="Audio Analysis", padx=10, pady=10)
-        self.analysis_frame.grid(
-            row=4, column=0, padx=20, pady=1, sticky="nsew", columnspan=4)
-
-        # configure analysis_frame grid layout
-        self.analysis_frame.grid_rowconfigure(0, weight=1)
-        self.analysis_frame.grid_rowconfigure(1, weight=1)
-        self.analysis_frame.grid_rowconfigure(2, weight=1)
-        self.analysis_frame.grid_columnconfigure(0, weight=1)
+        ## Frame-Analyzer        
+        # Configure analysis_frame grid layout
+        for i in range(ana_rows - 1):
+            self.analysis_frame.grid_rowconfigure(i, weight=1)
+        for i in range(ana_cols - 1):
+            self.analysis_frame.grid_columnconfigure(i, weight=1)
         self.analysis_frame.grid_columnconfigure(1, weight=3)
 
-        self.analysis_label = tk.Label(
-            self.analysis_frame, text="Analysis Menu:")
+        self.analysis_label = tk.Label(self.analysis_frame, text="Analysis Menu:")
         self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
         self.analysis_method = tk.StringVar(value="PESG")
         methods = ["PESG", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
-        self.analysis_method_combobox = ttk.Combobox(
-            self.analysis_frame, textvariable=self.analysis_method, values=methods, state="readonly")
-        self.analysis_method_combobox.grid(
-            row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method, values=methods, state="readonly")
+        self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
         ref_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+
         self.ref_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        # Default reference audio
         self.ref_audio_entry.insert(tk.END, "./plays/ref.wav")
         self.ref_audio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+
         self.target_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        self.target_audio_entry.insert(
-            tk.END, "./records/record.wav")  # Default target audio
-        self.target_audio_entry.grid(
-            row=2, column=1, padx=5, pady=5, sticky="ew")
+        self.target_audio_entry.insert(tk.END, "./records/record.wav")  # Default target audio
+        self.target_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
-        self.analysis_button = tk.Button(
-            self.analysis_frame, text="Run Analysis", command=self.analyze_audio)
+        self.analysis_button = tk.Button(self.analysis_frame, text="Run Analysis", command=self.analyze_audio)
         self.analysis_button.grid(row=3, column=0, columnspan=2, pady=10)
 
-    def setup_page5(self):
-        # Clear all widgets on page5
-        for widget in self.page5.winfo_children():
+    def setup_page_videos(self):
+        # Clear all widgets on page_videos
+        for widget in self.page_videos.winfo_children():
             widget.destroy()
 
-        # Configure grid layout for page5
+        # Configure grid layout for page_videos
         for i in range(3):
-            self.page5.grid_rowconfigure(i, weight=1, pad=10)
-        self.page5.grid_columnconfigure(0, weight=1, pad=10)
+            self.page_videos.grid_rowconfigure(i, weight=1, pad=10)
+        self.page_videos.grid_columnconfigure(0, weight=1, pad=10)
 
         # Title label for video section
         video_record_label = tk.Label(
-            self.page5,
+            self.page_videos,
             text=self.get_text("Video Recording and Playback"),
             font=("Arial", self.default_font_size + 2, "bold")
         )
@@ -515,7 +531,7 @@ class RemoteHostApp:
 
         # Button to start recording
         record_video_button = tk.Button(
-            self.page5,
+            self.page_videos,
             text=self.get_text("Start Recording"),
             command=self.record_video,
             width=20
@@ -524,33 +540,33 @@ class RemoteHostApp:
 
         # Button to play recorded video
         play_video_button = tk.Button(
-            self.page5,
+            self.page_videos,
             text=self.get_text("Play Video"),
             command=self.play_video,
             width=20
         )
         play_video_button.grid(row=2, column=0, pady=10, sticky="n")
 
-    def setup_page6(self):
-        # Clear all widgets on page6
-        for widget in self.page6.winfo_children():
+    def setup_page_setings(self):
+        # Clear all widgets on page_setings
+        for widget in self.page_setings.winfo_children():
             widget.destroy()
 
-        # Configure grid weights for page6 to make it responsive
+        # Configure grid weights for page_setings to make it responsive
         for i in range(5):
-            self.page6.grid_rowconfigure(i, weight=1, pad=5)
+            self.page_setings.grid_rowconfigure(i, weight=1, pad=5)
         for j in range(4):
-            self.page6.grid_columnconfigure(j, weight=1, pad=5)
+            self.page_setings.grid_columnconfigure(j, weight=1, pad=5)
 
         # Title label for settings
         settings_label = tk.Label(
-            self.page6, text=self.get_text("Settings"),
+            self.page_setings, text=self.get_text("Settings"),
             font=("Arial", self.default_font_size + 4, "bold")
         )
         settings_label.grid(row=0, column=0, columnspan=4, pady=(10, 15), sticky="nsew")
 
         # Parameter frame for better grouping (optional)
-        para_frame = tk.Frame(self.page6)
+        para_frame = tk.Frame(self.page_setings)
         para_frame.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=20)
 
         # Configure grid inside para_frame
@@ -706,18 +722,18 @@ class RemoteHostApp:
 
     def update_language(self):
         # Update navigation bar labels when language is changed
-        self.navbar.tab(self.page1, text=self.get_text("SSH"))
-        self.navbar.tab(self.page3, text=self.get_text("Files"))
-        self.navbar.tab(self.page4, text=self.get_text("Audio"))
-        self.navbar.tab(self.page5, text=self.get_text("Video"))
-        self.navbar.tab(self.page6, text=self.get_text("Settings"))
+        self.navbar.tab(self.page_home, text=self.get_text("SSH"))
+        self.navbar.tab(self.page_flies, text=self.get_text("Files"))
+        self.navbar.tab(self.page_aduios, text=self.get_text("Audio"))
+        self.navbar.tab(self.page_videos, text=self.get_text("Video"))
+        self.navbar.tab(self.page_setings, text=self.get_text("Settings"))
 
         # Reload each page
-        self.setup_page1()
-        self.setup_page3()
-        self.setup_page4()
-        self.setup_page5()
-        self.setup_page6()
+        self.setup_page_home()
+        self.setup_page_flies()
+        self.setup_page_aduios()
+        self.setup_page_videos()
+        self.setup_page_setings()
 
     def connect_to_ssh(self):
         self.hostname = self.hostname_entry.get()
@@ -733,13 +749,27 @@ class RemoteHostApp:
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
             self.update_device_menu()
+            self.update_folder_menu()
             self.audio_module = AudioModule(self.ssh_client)
-            self.remote_reset()
+            self.remote_reset('mute')
         except Exception as e:
             self.status_label.config(text=self.get_text(
                 "Status: Connection Failed"), fg="red")
             messagebox.showerror(self.get_text(
                 "Connection Error"), f"{self.get_text('Connection Failed')}: {str(e)}")
+            
+    def disconnect_from_ssh(self):
+        if self.ssh_client:
+            try:
+                self.ssh_client.disconnect()
+                self.ssh_client = None
+                self.audio_module = None
+                self.status_label.config(text=self.get_text("Status: Not connected"), fg="red")
+                # messagebox.showinfo(self.get_text("Disconnected"), self.get_text("SSH connection closed."))
+            except Exception as e:
+                messagebox.showerror(self.get_text("Error"), f"{self.get_text('Disconnection Failed')}: {str(e)}")
+        else:
+            messagebox.showwarning(self.get_text("Warning"), self.get_text("Not connected to any SSH host."))
 
     def upload_file(self):
         if self.ssh_client:
@@ -785,7 +815,7 @@ class RemoteHostApp:
                 self.log_text.insert(tk.END, self.get_text(
                     "Source file does not exist on remote host") + "\n")
                 return
-            dest_path = self.download_entry_dest.get()
+            dest_path = self.download_combobox_src.get()
             if not os.path.isdir(dest_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Destination path does not exist or is not a directory"))
@@ -806,68 +836,258 @@ class RemoteHostApp:
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
-
-    def record_audio(self):
-        self.log_text.insert(tk.END, self.get_text(
-            "Start recording...") + "\n")
-        self.audio_module.paras_settings(
-            rate=int(self.sampling_rate.get()),
-            channels=int(self.channels.get()),
-            audio_format=self.data_type.get(),
-            file_type=self.file_type.get(),
-            engine=self.engine.get(),
-            device=self.record_device.get()
-        )
-        self.audio_module.audio_dir_record = self.rec_path_entry.get()
-        ret = self.audio_module.record_audio(
-            self.audio_module.audio_dir_record,
-            self.audio_module.engine,
-            self.audio_module.device
-        )
-        if ret:
-            self.log_text.insert(tk.END, self.get_text(
-                "Recording completed successfully") + "\n")
-            messagebox.showinfo(self.get_text("Success"),
-                                self.get_text("Recording completed successfully"))
+    def toggle_playing(self):
+        def stop_playing(self):
+            self.log_text.insert(tk.END, self.get_text("Playback stopped") + "\n")
+            if self.audio_module is not None:
+                ret = self.audio_module.stop_playing()
+                if ret:
+                    # self.is_playing = False
+                    # self.play_button.config(text=self.get_text("Start Playing"))
+                    return True
+                else:
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Failed to stop playback"))
+                    return False
+            else:
+                messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
+                return False
+        if self.is_playing:
+            self.play_button.config(text=self.get_text("Start Playing"))
+            self.is_playing = False
+            self.play_progress_running = False
+            self.play_progress.stop()
+            stop_playing(self)
         else:
-            self.log_text.insert(tk.END, self.get_text(
-                "Recording failed") + "\n")
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Recording failed"))
+            self.play_button.config(text=self.get_text("Stop Playing"))
+            self.is_playing = True
+            self.audio_player_thread()
 
-    def play_audio(self):
-        self.log_text.insert(tk.END, self.get_text("Play recording...") + "\n")
-        audio_file = self.file_path_entry.get()
-        if not os.path.exists(audio_file):
+    def toggle_recording(self):
+        def stop_recording(self):
+            self.log_text.insert(tk.END, self.get_text("Recording stopped") + "\n")
+            if self.audio_module is not None:
+                ret = self.audio_module.stop_recording()
+                if ret:
+                    # self.is_recording = False
+                    # self.record_button.config(text=self.get_text("Start Recording"))
+                    return True
+                else:
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Failed to stop recording"))
+                    return False
+            else:
+                messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
+                return False
+        if self.is_recording:
+            self.record_button.config(text=self.get_text("Start Recording"))
+            self.is_recording = False
+            self.rec_progress_running = False
+            self.record_progress.stop()
+            stop_recording()
+        else:
+            self.record_button.config(text=self.get_text("Stop Recording"))
+            self.is_recording = True
+            self.audio_recorder_thread()
+
+    
+    def update_progress(self, elapsed, total, progress_bar=None):
+        if progress_bar is None:
             messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Audio file does not exist"))
-            self.log_text.insert(tk.END, self.get_text(
-                "Audio file does not exist") + "\n")
+                                 self.get_text("Progress bar not initialized"))
             return
+        if elapsed > total + 1:  # Allow a small buffer for rounding errors
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Elapsed time exceeds total time"))
+            return
+        percent = int((elapsed / total) * 100)
+        progress_bar['value'] = percent
+
+    def audio_recorder(self) -> bool:
+        if self.audio_module is None:
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Audio module not initialized"))
+            return False
+        # Check if the recording path is valid
         self.audio_module.paras_settings(
             rate=int(self.sampling_rate.get()),
             channels=int(self.channels.get()),
             audio_format=self.data_type.get(),
             file_type=self.file_type.get(),
-            engine=self.engine.get(),
-            device=self.play_device.get()
+            engine=self.rec_engine.get(),
+            device=self.record_device.get(),
+            rec_sec= int(self.rec_dur.get() or 10)  # Default to 10 seconds if empty
         )
-        self.audio_module.audio_dir_play = audio_file
-        ret = self.audio_module.play_audio(
-            audio_file,
-            self.audio_module.engine,
-            self.audio_module.device
+        # Start recording progress
+        self.log_text.insert(tk.END, self.get_text("Starting audio recording...") + "\n")
+        audio_dir_record = self.rec_path_combobox.get()
+        if self.ssh_client.is_dir(audio_dir_record):
+            # messagebox.showerror(self.get_text("Error"), self.get_text("Recording path is a directory, please specify a file path"))
+            self.log_text.insert(tk.END, self.get_text("Recording path is a directory, please specify a file path") + "\n")
+            return False
+        new_audio_dir = audio_dir_record
+        ret,new_audio_dir = self.audio_module.record_audio(audio_dir_record)
+        if new_audio_dir != audio_dir_record:
+            self.log_text.insert(tk.END, self.get_text(f"Audio recorded to {audio_dir_record}") + "\n")
+            self.rec_path_combobox.set(new_audio_dir)  # Update the path combobox to new recorded file
+            messagebox.showinfo(self.get_text("warning"), f"{self.get_text('Audio recorded to')} {audio_dir_record}")
+        # download the recorded file to local
+        if ret is True:
+            self.log_text.insert(tk.END, self.get_text("Downloading recorded audio file to local dir: ./tmp/ ") + "\n")
+            local_record_path = "./tmp/"
+            if not os.path.exists(local_record_path):
+                os.makedirs(local_record_path)
+            local_record_path = os.path.join(local_record_path, os.path.basename(new_audio_dir))
+            try:
+                self.ssh_client.download_file(new_audio_dir, local_record_path)
+                self.log_text.insert(tk.END, self.get_text(f"Recorded audio file downloaded to {local_record_path}") + "\n")
+                # messagebox.showinfo(self.get_text("Success"), f"{self.get_text('Recorded audio file downloaded to')} {local_record_path}")
+            except Exception as e:
+                messagebox.showerror(self.get_text("Error"),
+                                     f"{self.get_text('Download failed')}: {str(e)}")
+                self.log_text.insert(tk.END, self.get_text("Download failed: ") + str(e) + "\n")
+        return ret
+
+    def audio_recorder_thread(self):
+        total_sec = int(self.rec_dur.get() or 10)
+        self.rec_progress_running = True
+
+        # Record audio in a separate thread to avoid blocking the UI
+        def do_record():
+            # Start the progress bar
+            start_time = time.time()
+            def update():
+                update_frequency_ms = 200 
+                if not self.rec_progress_running:
+                    return
+                elapsed = time.time() - start_time
+                self.update_progress(elapsed, total_sec, self.record_progress)
+                
+                if elapsed >= total_sec:
+                    self.rec_progress_running = False
+                    self.record_progress['value'] = 100
+                    return
+                self.record_progress.after(update_frequency_ms, update)
+            self.record_progress.after(0, update)
+            # Start the actual recording
+            ret = self.audio_recorder()
+            self.rec_progress_running = False 
+            self.record_progress.stop()
+
+            # after recording, update the UI
+            def on_finish():
+                if ret:
+                    self.log_text.insert(tk.END, self.get_text("Recording completed successfully") + "\n")
+                    messagebox.showinfo(self.get_text("Success"), self.get_text("Recording completed successfully"))
+                    self.record_button.config(text=self.get_text("Start Recording"))
+                else:
+                    self.log_text.insert(tk.END, self.get_text("Recording failed") + "\n")
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Recording failed"))
+            self.record_progress.after(0, on_finish)
+
+        threading.Thread(target=do_record).start() 
+
+    def audio_player(self) -> bool:
+        self.log_text.insert(tk.END, self.get_text("Play recording...") + "\n")
+        audio_file = self.file_path_combobox.get()
+        if self.audio_module is None:
+            messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
+            return False
+        play_device = self.play_device.get()
+        play_rate = self.audio_module.rate
+        self.audio_module.paras_settings(
+            rate=self.audio_module.rate,                    # Use the format from WAV info
+            channels=self.audio_module.channels,            # Use the format from WAV info
+            audio_format= self.audio_module.audio_format,   # Use the format from WAV info
+            file_type=self.audio_module.file_type,          # Use the format from WAV info
+            engine=self.play_engine.get(),
+            device=play_device
         )
-        if ret:
-            self.log_text.insert(tk.END, self.get_text(
-                "Playback completed successfully") + "\n")
-            messagebox.showinfo(self.get_text("Success"),
-                                self.get_text("Playback completed successfully"))
+        if self.audio_module.is_loopback_device(play_device):
+            if self.audio_module.rate != 48000:  # Loopback device requires a specific sample rate
+                print(f"[err]: Loopback device {play_device} requires sample rate 48000, but got {play_rate}.")
+                return False
+            self.log_text.insert(tk.END, self.get_text("Loopback device selected, playback will be looped.") + "\n")
+            ret = self.audio_module.loopback_file_mode_start(audio_file)
         else:
-            self.log_text.insert(tk.END, self.get_text(
-                "Playback failed") + "\n")
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Playback failed"))
+             ret = self.audio_module.play_audio(audio_file)
+        return ret
+        
+    def audio_player_thread(self):
+        wav_info = self.audio_module.get_wav_info(self.file_path_combobox.get())
+        if wav_info is None:
+            messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
+            return
+        try:
+            expect_duration = int(self.play_duration_entry.get())
+        except ValueError:
+            expect_duration = 0
+
+        # Default to 1 hour if duration is set < 0 
+        print(f"Expect duration: {expect_duration}")
+        expect_duration = 3600 if expect_duration < 0 else expect_duration   # Default to 1 hour if invalid
+        
+        # print(f"WAV Info: {wav_info}")
+        file_dur_sec_float = float(wav_info['duration'])
+        file_dur_sec = int(file_dur_sec_float) + 1 # Add 1 second buffer to avoid rounding issues
+        total_sec = max(file_dur_sec, expect_duration)
+        self.audio_module.play_dur_sec = total_sec  # Set the playback duration for the module
+        sample_rate = self.audio_module.rate = int(wav_info['sample_rate'])
+        channels = self.audio_module.channels = int(wav_info['channels'])
+        sample_fmt = self.audio_module.audio_format = wav_info['sample_fmt']
+        self.file_type.set('wav')  # Set file type from WAV info
+        print(f"Audio file: {self.file_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
+              f"Duration: {total_sec} sec")
+        self.play_progress_running = True
+        device = self.play_device.get()
+
+        # Play audio in a separate thread to avoid blocking the UI
+        def do_play():
+            # Start the progress bar
+            start_time = time.time()
+            def update():
+                update_frequency_ms = 200 
+                if not self.play_progress_running:
+                    return
+                elapsed = time.time() - start_time
+                self.update_progress(elapsed, total_sec, self.play_progress)
+                
+                if elapsed >= total_sec:
+                    self.log_text.insert(tk.END, self.get_text("Playback duration reached") + "\n")
+                    self.play_progress_running = False
+                    self.play_progress['value'] = 100
+                    return
+                self.play_progress.after(update_frequency_ms, update)
+
+            self.play_progress.after(0, update)
+
+            # Start the actual playback
+            if self.audio_module.is_loopback_device(device):
+                ret = self.audio_player()
+                while self.play_progress_running and ret:
+                    time.sleep(1)
+                self.audio_module.loopback_file_mode_stop()
+            else:
+                while self.play_progress_running and  self.audio_module.play_dur_sec > 0:
+                    ret = self.audio_player()
+                    self.audio_module.play_dur_sec -= file_dur_sec 
+                    if not ret:
+                        self.log_text.insert(tk.END, self.get_text("Playback failed") + "\n")
+                        break
+            self.play_progress_running = False 
+            self.play_progress.stop()
+
+            # after playback, update the UI
+            def on_finish():
+                if ret:
+                    self.log_text.insert(tk.END, self.get_text("Playback completed successfully") + "\n")
+                    messagebox.showinfo(self.get_text("Success"), self.get_text("Playback completed successfully"))
+                else:
+                    self.log_text.insert(tk.END, self.get_text("Playback failed") + "\n")
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Playback failed"))
+                self.play_button.config(text=self.get_text("Start Playing"))
+
+            self.play_progress.after(0, on_finish)
+
+        threading.Thread(target=do_play).start()
 
     def record_video(self):
         self.log_text.insert(tk.END, self.get_text(
@@ -879,27 +1099,42 @@ class RemoteHostApp:
         # TODO: Implement play video
 
     def update_device_menu(self, *args):
-        print(f"Updating playback device and recording device menus...")
+        print(f"[init]: Updating playback/recording device list...")
         if not self.ssh_client:
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Not connected to remote host"))
+            messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
             return None
-        menu = self.play_device_combobox['menu']
-        menu.delete(0, 'end')
+        
         new_speaker_list = self.ssh_client.get_speaker_list()
-        for speaker in new_speaker_list:
-            menu.add_command(label=speaker, command=tk._setit(
-                self.play_device, speaker))
-        self.play_device.set(new_speaker_list[0])
+        def_spk_idx = 0
+        for i, speaker in enumerate(new_speaker_list):
+            if self.default_speaker in speaker:
+                def_spk_idx = i
+                break
+        self.play_device_combobox['values'] = new_speaker_list
+        self.play_device_combobox.current(def_spk_idx)
 
-        menu = self.record_device_combobox['menu']
-        menu.delete(0, 'end')
         new_mic_list = self.ssh_client.get_mic_list()
-        for mic in new_mic_list:
-            menu.add_command(
-                label=mic, command=tk._setit(self.play_device, mic))
-        self.record_device.set(new_mic_list[0])
+        def_mic_idx = 0
+        for i, mic in enumerate(new_mic_list):
+            if self.default_mic in mic:
+                def_mic_idx = i
+                break
+        self.record_device_combobox['values'] = new_mic_list
+        self.record_device_combobox.current(def_mic_idx)
+    
+    def update_folder_menu(self):
+        if not self.ssh_client:
+            messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
+            return None
+        play_menu = self.ssh_client.get_file_name_list("/root/plays/")
+        self.file_path_combobox.config(values=play_menu)
 
+        rec_menu = self.ssh_client.get_file_name_list("/root/records/")
+        self.rec_path_combobox.config(values=rec_menu)
+
+        # Update the upload/download folder paths
+        self.download_combobox_src.config(values=rec_menu)
+        
     def analyze_audio(self):
         self.log_text.insert(tk.END, self.get_text(
             "Start audio analysis...") + "\n")
@@ -908,16 +1143,12 @@ class RemoteHostApp:
         target_audio = self.target_audio_entry.get()
 
         if not os.path.exists(ref_audio):
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Reference audio file does not exist"))
-            self.log_text.insert(tk.END, self.get_text(
-                "Reference audio file does not exist") + "\n")
+            messagebox.showerror(self.get_text("Error"), self.get_text("Reference audio file does not exist"))
+            self.log_text.insert(tk.END, self.get_text("Reference audio file does not exist") + "\n")
             return
         if not os.path.exists(target_audio):
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Target audio file does not exist"))
-            self.log_text.insert(tk.END, self.get_text(
-                "Target audio file does not exist") + "\n")
+            messagebox.showerror(self.get_text("Error"), self.get_text("Target audio file does not exist"))
+            self.log_text.insert(tk.END, self.get_text("Target audio file does not exist") + "\n")
             return
 
         try:
@@ -940,7 +1171,17 @@ class RemoteHostApp:
         python = sys.executable
         os.execl(python, python, *sys.argv)
 
-    def remote_reset(self):
+    def refresh_ui(self):
+        """
+        Refresh the UI to reflect any changes.
+        """
+        self.log_text.insert(tk.END, self.get_text("Refreshing UI...") + "\n")
+        self.update_device_menu()
+        self.log_text.insert(tk.END, self.get_text("UI refreshed successfully") + "\n")
+        messagebox.showinfo(self.get_text("Success"),
+                            self.get_text("UI refreshed successfully"))
+
+    def remote_reset(self, flag="normal"):
         """
         Reset the remote host.
         """
@@ -948,8 +1189,9 @@ class RemoteHostApp:
             self.ssh_client.reset(self.ssh_client)
             self.log_text.insert(tk.END, self.get_text(
                 "Remote host reset successfully") + "\n")
-            messagebox.showinfo(self.get_text("Success"),
-                                self.get_text("Remote host reset successfully"))
+            if 'mute' not in flag:
+              messagebox.showinfo(self.get_text("Success"),
+                                  self.get_text("Remote host reset successfully"))
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
@@ -958,4 +1200,5 @@ class RemoteHostApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = RemoteHostApp(root)
+    app.connect_to_ssh()  # Expose for external use
     root.mainloop()
