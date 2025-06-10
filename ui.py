@@ -10,6 +10,7 @@ import time
 
 from ssh_client import SSHClient
 from audio_module import AudioModule
+from audio_analyzer import AudioAnalyzer
 
 
 class RemoteHostApp:
@@ -33,7 +34,8 @@ class RemoteHostApp:
         # SSH connection information
         self.ssh_client = None
         self.audio_module = None
-        self.hostname = "192.168.50.140"
+        self.audio_analyzer = None
+        self.hostname = "192.168.50.138"
         self.username = "root"
         self.password = "test0000"
 
@@ -416,9 +418,9 @@ class RemoteHostApp:
         # === Row 1: Progress Bar ===
         self.record_progress = ttk.Progressbar(self.record_frame, orient="horizontal", length=400, mode="determinate")
         self.record_progress.grid(row=1, column=0, columnspan=6, padx=5, pady=(0, 10), sticky="nsew")
+        self.rec_progress_running = False
 
         # === Row 2: Start/Stop Button + Path Entry ===
-        self.is_recording = False
         self.record_button = tk.Button(self.record_frame, text=self.get_text("Start Recording"), command=self.toggle_recording)
         self.record_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
@@ -467,9 +469,9 @@ class RemoteHostApp:
         # === Row 1: Progress Bar ===
         self.play_progress = ttk.Progressbar(self.play_frame, orient="horizontal", length=400, mode="determinate")
         self.play_progress.grid(row=1, column=0, columnspan=6, padx=5, pady=(0, 10), sticky="nsew")
+        self.play_progress_running = False
 
         # === Row 2: Start/Stop Button + File Path Entry ===
-        self.is_playing = False
         self.play_button = tk.Button(self.play_frame, text=self.get_text("Start Playing"), command=self.toggle_playing)
         self.play_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
         
@@ -488,28 +490,32 @@ class RemoteHostApp:
         self.analysis_label = tk.Label(self.analysis_frame, text="Analysis Menu:")
         self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        self.analysis_method = tk.StringVar(value="PESG")
+        self.analysis_method = tk.StringVar(value="DOA")
         methods = ["PESG", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
+        self.analysis_progress = ttk.Progressbar(self.analysis_frame, orient="horizontal", length=400, mode="determinate")
+        self.analysis_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+        self.analysis_progress_running = False
+
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
-        ref_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        ref_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
         self.ref_audio_entry = tk.Entry(self.analysis_frame, width=50)
         self.ref_audio_entry.insert(tk.END, "./plays/ref.wav")
-        self.ref_audio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.ref_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
-        target_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
-
-        self.target_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        self.target_audio_entry.insert(tk.END, "./records/record.wav")  # Default target audio
-        self.target_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        
+        self.target_audio_path_var = tk.StringVar(value="./records/")  # Default target audio path
+        self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_path_var)
+        self.target_audio_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
-        self.analysis_button = tk.Button(self.analysis_frame, text="Run Analysis", command=self.analyze_audio)
-        self.analysis_button.grid(row=3, column=0, columnspan=2, pady=10)
+        self.analysis_button = tk.Button(self.analysis_frame, text="Run Analysis", command=self.toggle_analysis)
+        self.analysis_button.grid(row=4, column=0, columnspan=2, pady=10)
 
     def setup_page_videos(self):
         # Clear all widgets on page_videos
@@ -748,10 +754,14 @@ class RemoteHostApp:
 
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
+            # Reset remote sever
+            self.remote_reset('mute')
+            # Update the device and folder menus
             self.update_device_menu()
             self.update_folder_menu()
+            # Initialize audio module and analyzer
             self.audio_module = AudioModule(self.ssh_client)
-            self.remote_reset('mute')
+            self.audio_analyzer = AudioAnalyzer(self.audio_module)
         except Exception as e:
             self.status_label.config(text=self.get_text(
                 "Status: Connection Failed"), fg="red")
@@ -832,7 +842,7 @@ class RemoteHostApp:
             if self.audio_module is not None:
                 ret = self.audio_module.stop_playing()
                 if ret:
-                    # self.is_playing = False
+                    # self.play_progress_running = False
                     # self.play_button.config(text=self.get_text("Start Playing"))
                     return True
                 else:
@@ -841,15 +851,14 @@ class RemoteHostApp:
             else:
                 messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
                 return False
-        if self.is_playing:
+        if self.play_progress_running:
             self.play_button.config(text=self.get_text("Start Playing"))
-            self.is_playing = False
             self.play_progress_running = False
             self.play_progress.stop()
             stop_playing(self)
         else:
             self.play_button.config(text=self.get_text("Stop Playing"))
-            self.is_playing = True
+            self.play_progress_running = True
             self.audio_player_thread()
 
     def toggle_recording(self):
@@ -858,7 +867,7 @@ class RemoteHostApp:
             if self.audio_module is not None:
                 ret = self.audio_module.stop_recording()
                 if ret:
-                    # self.is_recording = False
+                    # self.rec_progress_running = False
                     # self.record_button.config(text=self.get_text("Start Recording"))
                     return True
                 else:
@@ -867,15 +876,14 @@ class RemoteHostApp:
             else:
                 messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
                 return False
-        if self.is_recording:
+        if self.rec_progress_running:
             self.record_button.config(text=self.get_text("Start Recording"))
-            self.is_recording = False
             self.rec_progress_running = False
             self.record_progress.stop()
             stop_recording()
         else:
             self.record_button.config(text=self.get_text("Stop Recording"))
-            self.is_recording = True
+            self.rec_progress_running = True
             self.audio_recorder_thread()
 
     
@@ -938,7 +946,6 @@ class RemoteHostApp:
 
     def audio_recorder_thread(self):
         total_sec = int(self.rec_dur.get() or 10)
-        self.rec_progress_running = True
 
         # Record audio in a separate thread to avoid blocking the UI
         def do_record():
@@ -1111,6 +1118,20 @@ class RemoteHostApp:
         self.record_device_combobox['values'] = new_mic_list
         self.record_device_combobox.current(def_mic_idx)
     
+    def get_file_name_list(self, path):
+        """
+        Get a list of file names in the specified directory on the local filesystem.
+        """
+        if not os.path.exists(path):
+            messagebox.showerror(self.get_text("Error"), self.get_text(f"Directory {path} does not exist"))
+            return []
+        try:
+            files = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)) and f.endswith(('.wav'))]
+            return sorted(files)
+        except Exception as e:
+            messagebox.showerror(self.get_text("Error"), f"{self.get_text('Failed to list files')}: {str(e)}")
+            return []
+        
     def update_folder_menu(self):
         if not self.ssh_client:
             messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
@@ -1121,36 +1142,75 @@ class RemoteHostApp:
         rec_menu = self.ssh_client.get_file_name_list("/root/records/")
         self.rec_path_combobox.config(values=rec_menu)
 
+        local_rec_menu = self.get_file_name_list("./records/")
+        self.target_audio_combobox.config(values=local_rec_menu)
+
         # Update the upload/download folder paths
         self.download_combobox_src.config(values=rec_menu)
-        
-    def analyze_audio(self):
-        print("[INFO]: Start audio analysis...") 
-        method = self.analysis_method.get()
-        ref_audio = self.ref_audio_entry.get()
-        target_audio = self.target_audio_entry.get()
+    
+    def toggle_analysis(self):
+        if self.analysis_progress_running:
+            print("[INFO]: Analysis already running, stopping...")
+            self.analysis_progress_running = False
+            self.analysis_progress.stop()
+            self.remote_reset('mute') 
+            self.analysis_button.config(text=self.get_text("Run Analysis"))
+        else:
+            print("[INFO]: Starting audio analysis...")
+            self.analysis_button.config(text=self.get_text("Stop Analysis"))
+            self.audio_analyzer_thread()
 
-        if not os.path.exists(ref_audio):
-            messagebox.showerror(self.get_text("Error"), self.get_text("Reference audio file does not exist"))
-            print("[ERR]: Reference audio file does not exist") 
-            return
-        if not os.path.exists(target_audio):
-            messagebox.showerror(self.get_text("Error"), self.get_text("Target audio file does not exist"))
-            print("[ERR]: Target audio file does not exist") 
-            return
+    def audio_analyzer_thread(self):
+        def task():
+            start_time = time.time()
+            method = self.analysis_method.get()
+            ref_audio = self.ref_audio_entry.get()
+            target_audio = self.target_audio_combobox.get()
+            wav_info = self.audio_module.get_wav_info(target_audio)
+            if wav_info is None:
+                messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
+                return
+            total_sec = int(wav_info['duration']) + 1  # Add 1 second buffer to avoid rounding issues
+            print(f"[INFO]: Starting audio analysis with method: {method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
+            if not os.path.exists(ref_audio):
+                print("[WARN]: Reference audio file does not exist") 
+            if not os.path.exists(target_audio):
+                messagebox.showerror(self.get_text("Error"), self.get_text("Target audio file does not exist"))
+                print("[ERR]: Target audio file does not exist") 
+                return
+            
+            def update_analyse_progress():
+                if not self.analysis_progress_running:
+                    return
+                update_frequency_ms = 200  # Update every 200 ms
+                elapsed = time.time() - start_time
+                self.update_progress(elapsed, total_sec, self.analysis_progress)
+                if elapsed >= total_sec:
+                    self.analysis_progress_running = False
+                    self.analysis_progress['value'] = 100
+                    return
+                self.analysis_progress.after(update_frequency_ms, update_analyse_progress)
+            # Start the progress bar
+            self.analysis_progress_running = True
+            self.analysis_start_time = time.time()
+            self.analysis_progress.after(0, update_analyse_progress)
+            # Perform the audio analysis
+            result = self.audio_analyzer.analyze_audio(method=method, ref_audio=ref_audio, target_audio=target_audio)
 
-        try:
-            result = self.audio_module.analyze_audio(
-                method, ref_audio, target_audio)
-            self.log_text.insert(
-                tk.END, f"{self.get_text('Analysis Result')}: {result}\n")
-            messagebox.showinfo(self.get_text("Analysis Result"),
-                                f"{self.get_text('Analysis Result')}: {result}")
-        except Exception as e:
-            messagebox.showerror(self.get_text("Error"),
-                                 f"{self.get_text('Audio analysis failed')}: {str(e)}")
-            self.log_text.insert(
-                tk.END, f"{self.get_text('Audio analysis failed')}: {str(e)}\n")
+            def on_finish():
+                self.analysis_progress_running = False
+                self.analysis_progress.stop()
+                if result is True:
+                    print("[INFO]: Audio analysis completed successfully") 
+                    messagebox.showinfo(self.get_text("Success"), f"{self.get_text('Audio analysis completed successfully')}: {result}")
+                else:
+                    print("[ERR]: Audio analysis failed") 
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Audio analysis failed"))
+            self.analysis_progress.after(0, on_finish)
+            
+        # Run the analysis task in a separate thread to avoid blocking the UI
+        print("[INFO]: Starting audio analysis thread...")
+        threading.Thread(target=task, daemon=True).start()
 
     def restart_app(self):
         """

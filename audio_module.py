@@ -1,6 +1,8 @@
 from ssh_client import SSHClient
 import os
 import re
+import wave
+import subprocess as sp
 
 class AudioModule:
     def __init__(self, ssh_client: SSHClient):
@@ -31,10 +33,10 @@ class AudioModule:
         self.device = device
         print(
             f"Audio settings updated: rate={self.rate}, channels={self.channels}, format={self.audio_format}, dur_sec={self.rec_dur_sec}, type={self.file_type}, engine={self.engine}, device={self.device}")
-        
-    def get_wav_info(self, audio_file: str) -> dict:
+
+    def get_remote_file_path(self, audio_file: str) -> bool:
         """
-        Get the information of a WAV audio file.
+        Check if the audio file exists on the remote server and upload it if necessary.
         """
         # check if ssh client is connected
         if self.ssh_client is None:
@@ -44,14 +46,48 @@ class AudioModule:
         audio_file_name = os.path.basename(audio_file)
         remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
         remote_exists = self.ssh_client.file_exists(remote_audio_file)
+
         if not local_exists and not remote_exists:
             print(f"[ERR]: Audio file {audio_file} does not exist either locally or on the remote server.")
             return None
-        
+
         # upload audio file to remote server if it does not exist        
         if not remote_exists and local_exists:
             self.ssh_client.upload_file(audio_file, self.audio_dir_play)
 
+        return remote_audio_file 
+       
+    def get_wav_info(self, audio_file: str) -> dict:
+        """
+        Get the information of a WAV audio file.
+        """
+        # Try local file first
+        if os.path.exists(audio_file):
+            try:
+                with wave.open(audio_file, 'rb') as wav_file:
+                    sample_rate = wav_file.getframerate()
+                    num_frames = wav_file.getnframes()
+                    duration = num_frames / sample_rate
+                    info = {
+                        'channels': wav_file.getnchannels(),
+                        'sample_rate': sample_rate,
+                        'num_frames': num_frames,
+                        'duration': duration,
+                    }
+                return info
+            except Exception as e:
+                print(f"[ERR]: Failed to read local WAV file {audio_file}: {e}")
+                return None
+        # check if ssh client is connected
+        if self.ssh_client is None:
+            print("[ERR]: SSH client is not connected.")
+            return None
+        
+        remote_audio_file = self.get_remote_file_path(audio_file)
+        if remote_audio_file is None:
+            print(f"[ERR]: Audio file {audio_file} does not exist on the remote server.")
+            return None
+        
         # get audio file information
         command = f"ffprobe -v error -show_format -show_streams {remote_audio_file}"
         output = self.ssh_client.execute_command(command)
@@ -130,10 +166,10 @@ class AudioModule:
             print("[ERR]: SSH client is not connected.")
             return False
         # check if the audio file exists on the remote server
-        audio_file_name = os.path.basename(audio_file)
-        remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
-        if not self.ssh_client.file_exists(remote_audio_file):
-            self.ssh_client.upload_file(audio_file, self.audio_dir_play)
+        remote_audio_file = self.get_remote_file_path(audio_file)
+        if remote_audio_file is None:
+            print(f"[ERR]: Audio file {audio_file} does not exist on the remote server.")
+            return False
         # check if the audio file is a valid audio file
         command = f"ffmpeg -i {remote_audio_file}"
         output = self.ssh_client.execute_command(command)
@@ -288,41 +324,6 @@ class AudioModule:
         else:
             print("[ERR]: Failed to record audio.")
             return False, output_file
-        
-    def analyze_audio(self, audio_file: str, method: str = "PESQ"):
-        """
-        Analyze the audio file and return its properties.
-        """
-        if not os.path.exists(audio_file):
-            print(f"[ERR]: Audio file {audio_file} does not exist.")
-            return None
-        # check if ssh client is connected
-        if not self.ssh_client.is_connected():
-            print("[ERR]: SSH client is not connected.")
-            return None
-        # check if the audio file exists on the remote server
-        audio_file_name = os.path.basename(audio_file)
-        remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
-        if not self.ssh_client.file_exists(remote_audio_file):
-            self.ssh_client.upload_file(audio_file, self.audio_dir_play)
-        # analyze audio file
-        if method == "PESQ":
-            pass
-        elif method == "Reverb":
-            pass
-        elif method == "SNR":
-            pass
-        elif method == "DOA":
-            pass
-        elif method == "ANR":
-            pass
-        elif method == "AEC":
-            pass
-        elif method == "Spectrum":
-            pass
-        else:
-            print(f"[ERR]: Unsupported analysis method: {method}")
-            return None
     
     def is_loopback_device(self, device) -> bool:
         """

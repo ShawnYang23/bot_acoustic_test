@@ -56,7 +56,7 @@ class SSHClient:
 
         return not self.is_connected()
 
-    def execute_command(self, command):
+    def execute_command(self, command, force=False):
         """
         Execute a remote command and return the output as a string.
         """
@@ -65,14 +65,16 @@ class SSHClient:
             # Get the output and error (if any)
             output = stdout.read().decode("utf-8").strip()
             error = stderr.read().decode("utf-8").strip()
-            # print(f"[INFO]: Executed command: {command}")
-            # print(f"[INFO]: Output: {output}")
-            # print(f"[INFO]: Error: {error}")
+            if force:
+                return output
             if error != "":
                 if output == "":
                     output = error
                 else:
-                    print(f"[ERR]: Remote cmd {command} failed with error: {error}")
+                    # only keep first 10 lines of error output
+                    error_lines = error.splitlines()
+                    error = "\n".join(error_lines[:10])
+                    print(f"[ERR]: Remote cmd {command} failed with error: {error}, output: {output}")
                     return None
             return output
         except Exception as e:
