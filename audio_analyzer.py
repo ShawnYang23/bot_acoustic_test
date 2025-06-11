@@ -189,15 +189,17 @@ class AudioAnalyzer:
                 duartion = len(doa_block[i]) / sample_rate
                 min_angle = np.min(doa_block[i])
                 max_angle = np.max(doa_block[i])
-                if max_angle - min_angle > 180: #crossing circle point
+                pole_diff = max_angle - min_angle
+                if pole_diff > 180: #crossing circle point
                     # Adjust angles to avoid crossing the 0/360 degree point
                     mid = (min_angle + max_angle) / 2
                     for j in range(len(doa_block[i])):
                         if doa_block[i][j] > mid:
                             doa_block[i][j] -= 360
+                    pole_diff = np.max(doa_block[i]) - np.min(doa_block[i])
                 average = np.mean(doa_block[i])
                 std = np.std(doa_block[i])
-                print(f"[INFO]: DOA Position {i}: Duration: {duartion:.2f}s, Average: {average:.2f}, STD: {std:.2f}")
+                print(f"[INFO]: DOA Position {i}: Dur: {duartion:.2f}s, AVE: {average:.2f}, STD: {std:.2f}, Pol-Diff: {pole_diff:.2f}")
 
             # plot the audio waveform with matplotlib
             offset = 0

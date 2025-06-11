@@ -35,7 +35,7 @@ class RemoteHostApp:
         self.ssh_client = None
         self.audio_module = None
         self.audio_analyzer = None
-        self.hostname = "192.168.50.138"
+        self.hostname = "192.168.50.53"
         self.username = "root"
         self.password = "test0000"
 

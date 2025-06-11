@@ -38,8 +38,7 @@ pyenv global 3.11.9
 
 ## 2. Install requirement.txt
 ``` shell
-
-   pip install -r requirements.txt
+   pip install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple
 ```
 
 ## 3. Init bot_acoustic_testing  tool

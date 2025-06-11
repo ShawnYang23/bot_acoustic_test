@@ -44,3 +44,7 @@ dtw_python==1.5.3
 librosa
 pydub==0.25.1
 scp
+numpy
+matplotlib
+scipy
+soundfile
