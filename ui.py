@@ -7,37 +7,60 @@ import os
 import sys
 import io
 import time
+import configparser
+from functools import partial
 
 from ssh_client import SSHClient
 from audio_module import AudioModule
 from audio_analyzer import AudioAnalyzer
 
-
 class RemoteHostApp:
     def __init__(self, root):
+         # Default configuration file
+        self.config_file = "ui_config.ini"
+        self.load_config()
+
+        # Initialize the main application window
         self.root = root
         self.root.title("Remote Host Manager")
-        self.default_width = 1920
-        self.default_height = 1080
-        self.root.geometry(f"{self.default_width}x{self.default_height}")
+        self.width = int(self.get_config("Settings", "width", fallback=1280))
+        self.height = int(self.get_config("Settings", "height", fallback=720))
+        self.root.geometry(f"{self.width}x{self.height}")
 
-        # Default settings
+        # Default ysytem settings
         self.default_aspect_ratio = (16, 9) # only support 16:9 aspect ratio
         self.min_width = 640
         self.max_width = 1920  # Maximum width for the window
         self.default_speaker = "rockchipad82178"
         self.default_mic = "vibemicarray"
+        self.default_font_size = int(self.get_config("Settings", "font_size", fallback=12))
+        self.language = self.get_config("Settings", "language", fallback="en")
 
-        self.default_font_size = 12
-        self.language = "en"  # Default language is English
+        # Audio settings
+        self.sampling_rate = self.get_config("Audio", "sampling_rate", fallback="48000")
+        self.channels = self.get_config("Audio", "channels", fallback="8")
+        self.data_type = self.get_config("Audio", "data_type", fallback="S16_LE")
+        self.file_type = self.get_config("Audio", "file_type", fallback="wav")
+        self.rec_dur = self.get_config("Audio", "rec_dur", fallback="10")
+        self.rec_device = self.get_config("Audio", "rec_device", fallback=self.default_mic)
+        self.rec_engine = self.get_config("Audio", "rec_engine", fallback="alsa")
+        self.rec_path = self.get_config("Audio", "rec_path", fallback="/root/records/")
+        self.play_device = self.get_config("Audio", "play_device", fallback=self.default_speaker)
+        self.play_engine = self.get_config("Audio", "play_engine", fallback="cras")
+        self.play_path = self.get_config("Audio", "play_path", fallback="/root/plays/")
+
+        # Audio analyzer settings
+        self.analysis_method = self.get_config("Analyser", "method", fallback="DOA")
+        self.ref_audio = self.get_config("Analyser", "ref_audio", fallback="./plays/")
+        self.target_audio = self.get_config("Analyser", "target_audio", fallback="./records/")
 
         # SSH connection information
         self.ssh_client = None
         self.audio_module = None
         self.audio_analyzer = None
-        self.hostname = "192.168.50.53"
-        self.username = "root"
-        self.password = "test0000"
+        self.hostname = self.get_config("SSH", "hostname", fallback="")
+        self.username = self.get_config("SSH", "username", fallback="")
+        self.password = self.get_config("SSH", "password", fallback="")
 
         # Create navigation bar (Notebook)
         self.navbar = ttk.Notebook(self.root)
@@ -69,6 +92,77 @@ class RemoteHostApp:
         self.setup_page_aduios()
         self.setup_page_videos()
         self.setup_page_setings()
+    
+    def load_config(self):
+        """
+        Load configuration from the config file.
+        If the file does not exist, create a new one with default values.
+        """
+        config = configparser.ConfigParser()
+        if os.path.exists(self.config_file):
+            return
+        else:
+            # Create default configuration
+            config["SSH"] = {
+                "hostname": "192.168.50.198",
+                "username": "root",
+                "password": "test0000"
+            }
+            config["Settings"] = {
+                "language": "en",
+                "font_size": "12",
+                "width": "1280",
+                "height": "720",
+            }
+            config["Audio"] = {
+                "channels": "8",
+                "sampling_rate": "48000",
+                "data_type": "S16_LE",
+                "file_type": "wav",
+                "rec_dur": "10",
+                "rec_device": f"{self.default_mic}",
+                "rec_engine": "alsa",
+                "rec_path": "/root/records/",
+                "play_device": f"{self.default_speaker}",
+                "play_engine": "cras",
+                "play_path": "/root/plays/"
+            }
+            config["Analyser"] = {
+                "method": "DOA",
+                "ref_audio": "./plays/ref.wav",
+                "target_audio": "./records/"
+            }
+            with open(self.config_file, 'w') as configfile:
+                config.write(configfile)
+
+    def on_widget_change(self, widget, section, option, *args):
+        """
+        Callback function to handle changes in widget values.
+        Updates the configuration file with the new value.
+        """
+        value = widget.get()
+        self.set_config(section, option, value)
+        # print(f"[INFO]: {section}.{option} changed to {value}")
+    
+    def get_config(self, section, option, fallback=None):
+        """
+        Get a configuration value from the config file.
+        """
+        config = configparser.ConfigParser()
+        config.read(self.config_file)
+        return config.get(section, option, fallback=fallback)
+    
+    def set_config(self, section, option, value):
+        """
+        Set a configuration value in the config file.
+        """
+        config = configparser.ConfigParser()
+        config.read(self.config_file)
+        if not config.has_section(section):
+            config.add_section(section)
+        config.set(section, option, str(value))
+        with open(self.config_file, 'w') as configfile:
+            config.write(configfile)
 
     def setup_page_home(self):
         # Clear page elements
@@ -99,22 +193,28 @@ class RemoteHostApp:
         # Hostname label and entry
         tk.Label(ssh_frame, text=self.get_text("Hostname: ")).grid(
             row=0, column=0, sticky="w", padx=5, pady=5)
-        self.hostname_entry = tk.Entry(ssh_frame)
-        self.hostname_entry.insert(tk.END, self.hostname)
+        self.hostname_var = tk.StringVar(value=self.hostname)
+        self.hostname_var.trace_add("write", partial(self.on_widget_change, self.hostname_var,
+                                                     "SSH", "hostname"))
+        self.hostname_entry = tk.Entry(ssh_frame, textvariable=self.hostname_var)
         self.hostname_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
         # Username label and entry
         tk.Label(ssh_frame, text=self.get_text("Username: ")).grid(
             row=1, column=0, sticky="w", padx=5, pady=5)
-        self.username_entry = tk.Entry(ssh_frame)
-        self.username_entry.insert(tk.END, self.username)
+        self.username_var = tk.StringVar(value=self.username)
+        self.username_var.trace_add("write", partial(self.on_widget_change, self.username_var,
+                                                     "SSH", "username"))
+        self.username_entry = tk.Entry(ssh_frame, textvariable=self.username_var)
         self.username_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         # Password label and entry
         tk.Label(ssh_frame, text=self.get_text("Password: ")).grid(
             row=2, column=0, sticky="w", padx=5, pady=5)
-        self.password_entry = tk.Entry(ssh_frame, show="*")
-        self.password_entry.insert(tk.END, self.password)
+        self.password_var = tk.StringVar(value=self.password)
+        self.password_var.trace_add("write", partial(self.on_widget_change, self.password_var,
+                                                        "SSH", "password"))
+        self.password_entry = tk.Entry(ssh_frame, textvariable=self.password_var, show="*")
         self.password_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         # Connect button
@@ -346,8 +446,10 @@ class RemoteHostApp:
         # Sampling rate settings
         self.sampling_rate_label = tk.Label(self.audio_settings_frame, text="Rate:")
         self.sampling_rate_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.sampling_rate = tk.StringVar(value="48000")
-        self.sampling_rate_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.sampling_rate,
+        self.sampling_rate_var = tk.StringVar(value=self.sampling_rate)
+        self.sampling_rate_var.trace_add("write", partial(self.on_widget_change, self.sampling_rate_var,
+                                                           "Audio", "sampling_rate"))
+        self.sampling_rate_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.sampling_rate_var,
                                                     values=["8000", "16000", "44100", "48000", "96000"],
                                                     state="readonly")
         self.sampling_rate_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -355,16 +457,20 @@ class RemoteHostApp:
         # Channels settings
         self.channels_label = tk.Label(self.audio_settings_frame, text="Chns:")
         self.channels_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.channels = tk.StringVar(value="2")
-        self.channels_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.channels,
+        self.channels_var = tk.StringVar(value=self.channels)
+        self.channels_var.trace_add("write", partial(self.on_widget_change, self.channels_var,
+                                                     "Audio", "channels"))
+        self.channels_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.channels_var,
                                             values=["1", "2", "6", "8"], state="readonly")
         self.channels_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
         # Data type settings
         self.data_type_label = tk.Label(self.audio_settings_frame, text="Fmt:")
         self.data_type_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        self.data_type = tk.StringVar(value="S16_LE")
-        self.data_type_entry = ttk.Combobox(self.audio_settings_frame, textvariable=self.data_type,
+        self.data_type_var = tk.StringVar(value=self.data_type)
+        self.data_type_var.trace_add("write", partial(self.on_widget_change, self.data_type_var,
+                                                         "Audio", "data_type"))
+        self.data_type_entry = ttk.Combobox(self.audio_settings_frame, textvariable=self.data_type_var,
                                             values=["S16_LE", "S24_LE", "S32_LE", "FLOAT_LE"],
                                             state="readonly")
         self.data_type_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
@@ -372,8 +478,10 @@ class RemoteHostApp:
         # File type selection (wav/pcm)
         self.file_type_label = tk.Label(self.audio_settings_frame, text="Type:")
         self.file_type_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        self.file_type = tk.StringVar(value="wav")
-        self.file_type_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.file_type,
+        self.file_type_var = tk.StringVar(value=self.file_type)
+        self.file_type_var.trace_add("write", partial(self.on_widget_change, self.file_type_var,
+                                                     "Audio", "file_type"))
+        self.file_type_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.file_type_var,
                                                   values=["wav", "pcm"], state="readonly")
         self.file_type_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
@@ -386,23 +494,27 @@ class RemoteHostApp:
 
         # === Row 0: Device selection and rec duration ===
         # Device
-        self.record_device_label = tk.Label(self.record_frame, text="Device:")
-        self.record_device_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")  
+        self.rec_device_label = tk.Label(self.record_frame, text="Device:")
+        self.rec_device_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")  
 
-        self.record_device = tk.StringVar(value="Default")
-        self.record_device_combobox = ttk.Combobox(
-            self.record_frame, textvariable=self.record_device,
+        self.rec_device_var = tk.StringVar(value=self.rec_device)
+        self.rec_device_var.trace_add("write", partial(self.on_widget_change, self.rec_device_var,
+                                                              "Audio", "rec_device"))
+        self.rec_device_combobox = ttk.Combobox(
+            self.record_frame, textvariable=self.rec_device_var,
             values=["Default", "menu", "none"], state="readonly"
         )
-        self.record_device_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")  
+        self.rec_device_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")  
 
         # Engine
         self.rec_engine_label = tk.Label(self.record_frame, text="Engine:")
         self.rec_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.rec_engine = tk.StringVar(value="alsa")
+        self.rec_engine_var = tk.StringVar(value=self.rec_engine)
+        self.rec_engine_var.trace_add("write", partial(self.on_widget_change, self.rec_engine_var,
+                                                        "Audio", "rec_engine"))
         self.rec_engine_combobox = ttk.Combobox(
-            self.record_frame, textvariable=self.rec_engine,
+            self.record_frame, textvariable=self.rec_engine_var,
             values=["alsa", "cras"], state="readonly"
         )
         self.rec_engine_combobox.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
@@ -411,8 +523,9 @@ class RemoteHostApp:
         self.rec_dur_label = tk.Label(self.record_frame, text="Duration(s):")
         self.rec_dur_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
 
-        self.rec_dur = tk.StringVar(value="10")
-        self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur)
+        self.rec_dur_var = tk.StringVar(value="10")
+        self.rec_dur_var.trace_add("write", partial(self.on_widget_change, self.rec_dur_var, "Audio", "rec_dur"))
+        self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur_var)
         self.rec_dur_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
 
         # === Row 1: Progress Bar ===
@@ -424,7 +537,9 @@ class RemoteHostApp:
         self.record_button = tk.Button(self.record_frame, text=self.get_text("Start Recording"), command=self.toggle_recording)
         self.record_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
-        self.rec_path_var = tk.StringVar(value="/root/records/")  # Default path for recording
+        self.rec_path_var = tk.StringVar(value=self.rec_path)
+        self.rec_path_var.trace_add("write", partial(self.on_widget_change, self.rec_path_var,
+                                                     "Audio", "rec_path"))
         self.rec_path_combobox = ttk.Combobox(self.record_frame, textvariable=self.rec_path_var)
         self.rec_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
@@ -440,9 +555,11 @@ class RemoteHostApp:
         self.play_deviece_label = tk.Label(self.play_frame, text="Device:")
         self.play_deviece_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
 
-        self.play_device = tk.StringVar(value="Default")
+        self.play_device_var = tk.StringVar(value=self.play_device)
+        self.play_device_var.trace_add("write", partial(self.on_widget_change, self.play_device_var,
+                                                        "Audio", "play_device"))
         self.play_device_combobox = ttk.Combobox(
-            self.play_frame, textvariable=self.play_device,
+            self.play_frame, textvariable=self.play_device_var,
             values=["Default", "menu", "none"], state="readonly"
         )
         self.play_device_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
@@ -451,9 +568,11 @@ class RemoteHostApp:
         self.play_engine_label = tk.Label(self.play_frame, text="Engine:")
         self.play_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.play_engine = tk.StringVar(value="cras")
+        self.play_engine_var = tk.StringVar(value=self.play_engine)
+        self.play_engine_var.trace_add("write", partial(self.on_widget_change, self.play_engine_var,
+                                                        "Audio", "play_engine"))
         self.play_engine_combobox = ttk.Combobox(
-            self.play_frame, textvariable=self.play_engine,
+            self.play_frame, textvariable=self.play_engine_var,
             values=["alsa", "cras"], state="readonly"
         )
         self.play_engine_combobox.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
@@ -462,7 +581,7 @@ class RemoteHostApp:
         self.play_duration_static_label = tk.Label(self.play_frame, text="Duration(s):")
         self.play_duration_static_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
 
-        self.play_duration_value = tk.StringVar(value="")
+        self.play_duration_value = tk.StringVar(value="--")
         self.play_duration_entry = tk.Entry(self.play_frame, textvariable=self.play_duration_value)
         self.play_duration_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
 
@@ -475,8 +594,10 @@ class RemoteHostApp:
         self.play_button = tk.Button(self.play_frame, text=self.get_text("Start Playing"), command=self.toggle_playing)
         self.play_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
         
-        self.plays_file_path_var = tk.StringVar(value="/root/plays/")  # Default path for playback
-        self.file_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.plays_file_path_var)
+        self.play_path_var = tk.StringVar(value=self.play_path)
+        self.play_path_var.trace_add("write", partial(self.on_widget_change, self.play_path_var,
+                                                             "Audio", "play_path"))
+        self.file_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.play_path_var)
         self.file_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Analyzer        
@@ -490,9 +611,11 @@ class RemoteHostApp:
         self.analysis_label = tk.Label(self.analysis_frame, text="Analysis Menu:")
         self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        self.analysis_method = tk.StringVar(value="DOA")
+        self.analysis_method_var = tk.StringVar(value=self.analysis_method)
+        self.analysis_method_var.trace_add("write", partial(self.on_widget_change, self.analysis_method_var,
+                                                             "Analyser", "method"))
         methods = ["PESG", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
-        self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method, values=methods, state="readonly")
+        self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         self.analysis_progress = ttk.Progressbar(self.analysis_frame, orient="horizontal", length=400, mode="determinate")
@@ -502,15 +625,19 @@ class RemoteHostApp:
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
         ref_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
-        self.ref_audio_entry = tk.Entry(self.analysis_frame, width=50)
-        self.ref_audio_entry.insert(tk.END, "./plays/ref.wav")
+        self.ref_audio_var = tk.StringVar(value=self.ref_audio)
+        self.ref_audio_var.trace_add("write", partial(self.on_widget_change, self.ref_audio_var,
+                                                     "Analyser", "ref_audio"))
+        self.ref_audio_entry = tk.Entry(self.analysis_frame, textvariable=self.ref_audio_var)
         self.ref_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         
-        self.target_audio_path_var = tk.StringVar(value="./records/")  # Default target audio path
-        self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_path_var)
+        self.target_audio_var = tk.StringVar(value=self.target_audio)
+        self.target_audio_var.trace_add("write", partial(self.on_widget_change, self.target_audio_var,
+                                                     "Analyser", "target_audio"))
+        self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_var)
         self.target_audio_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
@@ -585,23 +712,29 @@ class RemoteHostApp:
         size_label = tk.Label(para_frame, text=self.get_text("Window (WxH):"))
         size_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
 
-        self.width_entry = tk.Entry(para_frame)
-        self.width_entry.insert(tk.END, str(self.default_width))
+        self.width_var = tk.StringVar(value=str(self.width))
+        self.width_var.trace_add("write", partial(self.on_widget_change, self.width_var,
+                                                     "Settings", "width"))
+        self.width_entry = tk.Entry(para_frame, textvariable=self.width_var)
         self.width_entry.grid(row=0, column=1, sticky="ew", padx=5)
 
         x_label = tk.Label(para_frame, text="x")
         x_label.grid(row=0, column=2, sticky="ew", padx=0)
 
-        self.height_entry = tk.Entry(para_frame)
-        self.height_entry.insert(tk.END, str(self.default_height))
+        self.height_var = tk.StringVar(value=str(self.height))
+        self.height_var.trace_add("write", partial(self.on_widget_change, self.height_var,
+                                                     "Settings", "height"))
+        self.height_entry = tk.Entry(para_frame, textvariable=self.height_var)
         self.height_entry.grid(row=0, column=3, sticky="ew", padx=5)
 
         # Font size label and entry
         font_size_label = tk.Label(para_frame, text=self.get_text("Font Size:"))
         font_size_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
-
-        self.font_size_entry = tk.Entry(para_frame)
-        self.font_size_entry.insert(tk.END, str(self.default_font_size))
+   
+        self.font_size_var = tk.StringVar(value=str(self.default_font_size))
+        self.font_size_var.trace_add("write", partial(self.on_widget_change, self.font_size_var,
+                                                     "Settings", "font_size"))
+        self.font_size_entry = tk.Entry(para_frame, textvariable=self.font_size_var)
         self.font_size_entry.grid(row=1, column=1, sticky="ew", padx=5)
 
         # Language selection label and combobox
@@ -609,6 +742,8 @@ class RemoteHostApp:
         language_label.grid(row=2, column=0, sticky="e", padx=5, pady=5)
 
         self.language_var = tk.StringVar(value=self.language)
+        self.language_var.trace_add("write", partial(self.on_widget_change, self.language_var,
+                                                     "Settings", "language"))
         language_combobox = ttk.Combobox(
             para_frame, textvariable=self.language_var,
             values=["en", "zh"], state="readonly"
@@ -632,8 +767,8 @@ class RemoteHostApp:
         elif new_width > self.max_width:
             new_width = self.max_width
         new_height = int(new_width / aspect_ratio)
-        self.default_width = new_width
-        self.default_height = new_height
+        self.width = new_width
+        self.height = new_height
         return new_width, new_height
 
     def save_settings(self):
@@ -906,13 +1041,13 @@ class RemoteHostApp:
             return False
         # Check if the recording path is valid
         self.audio_module.paras_settings(
-            rate=int(self.sampling_rate.get()),
-            channels=int(self.channels.get()),
-            audio_format=self.data_type.get(),
-            file_type=self.file_type.get(),
-            engine=self.rec_engine.get(),
-            device=self.record_device.get(),
-            rec_sec= int(self.rec_dur.get() or 10)  # Default to 10 seconds if empty
+            rate=int(self.sampling_rate_var.get()),
+            channels=int(self.channels_var.get()),
+            audio_format=self.data_type_var.get(),
+            file_type=self.file_type_var.get(),
+            engine=self.rec_engine_combobox.get(),
+            device=self.rec_device_combobox.get(),
+            rec_sec= int(self.rec_dur_var.get() or 10)  # Default to 10 seconds if empty
         )
         # Start recording progress
         print("[INFO]: Starting audio recording...") 
@@ -988,14 +1123,14 @@ class RemoteHostApp:
         if self.audio_module is None:
             messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
             return False
-        play_device = self.play_device.get()
+        play_device = self.play_device_combobox.get()
         play_rate = self.audio_module.rate
         self.audio_module.paras_settings(
             rate=self.audio_module.rate,                    # Use the format from WAV info
             channels=self.audio_module.channels,            # Use the format from WAV info
             audio_format= self.audio_module.audio_format,   # Use the format from WAV info
             file_type=self.audio_module.file_type,          # Use the format from WAV info
-            engine=self.play_engine.get(),
+            engine=self.play_engine_var.get(),
             device=play_device
         )
         if self.audio_module.is_loopback_device(play_device):
@@ -1020,7 +1155,6 @@ class RemoteHostApp:
 
         # Default to 1 hour if duration is set < 0 
         expect_duration = 3600 if expect_duration < 0 else expect_duration   # Default to 1 hour if invalid
-        print(f"[INFO]: Expect duration: {expect_duration}")
         
         # print(f"[INFO]: WAV Info: {wav_info}")
         file_dur_sec_float = float(wav_info['duration'])
@@ -1034,7 +1168,7 @@ class RemoteHostApp:
         print(f"[INFO]: Audio file: {self.file_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
               f"Duration: {total_sec} sec")
         self.play_progress_running = True
-        device = self.play_device.get()
+        device = self.play_device_var.get()
 
         # Play audio in a separate thread to avoid blocking the UI
         def do_play():
@@ -1115,8 +1249,8 @@ class RemoteHostApp:
             if self.default_mic in mic:
                 def_mic_idx = i
                 break
-        self.record_device_combobox['values'] = new_mic_list
-        self.record_device_combobox.current(def_mic_idx)
+        self.rec_device_combobox['values'] = new_mic_list
+        self.rec_device_combobox.current(def_mic_idx)
     
     def get_file_name_list(self, path):
         """
@@ -1133,6 +1267,7 @@ class RemoteHostApp:
             return []
         
     def update_folder_menu(self):
+        print(f"[init]: Updating file and folder paths...")
         if not self.ssh_client:
             messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
             return None
