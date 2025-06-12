@@ -282,33 +282,27 @@ class AudioModule:
         """
         if not self.ssh_client:
             print("[ERR]: SSH client is not connected.")
-            return False, output_file            
+            return False    
         # check if the output file exists on the remote server
         remote_output_file = os.path.join(self.audio_dir_record, os.path.basename(output_file))
-        suffix = 0
-        while self.ssh_client.file_exists(remote_output_file):
-            suffix += 1
-            remote_output_file = os.path.join(self.audio_dir_record, f"{os.path.basename(output_file).split('.')[0]}_{suffix}.{os.path.basename(output_file).split('.')[1]}")
-      
-        output_file = remote_output_file
         # check if the output file already exists
         if self.ssh_client.file_exists(remote_output_file):
             print(f"[WARN]: Output file {remote_output_file} already exists.")
-            return False, output_file
+            return False
         
         if self.engine == "alsa":
             if not self.check_avaliable_paras('mic'):
-                return False, output_file
+                return False
             command = f"arecord -D {self.device} -f {self.audio_format} -r {self.rate} -t {self.file_type} -c {self.channels} -d {self.rec_dur_sec} {remote_output_file}"
         elif self.engine == "cras":
             cras_node = self.get_cras_node(self.device, direction="Input")
             if cras_node is None:
                 print(f"[ERR]: CRAS node for device {self.device} not found.")
-                return False, output_file
+                return False
             command = f"cras_test_client --select_input {cras_node} --duration_seconds {self.rec_dur_sec} --record_file {remote_output_file}"
         else:
             print(f"[ERR]: Unsupported engine: {self.engine}")
-            return False, output_file
+            return False
         
         # device vibemicarray has conflict with device Loopback,0 because of vibe-dsp-server
         if self.device == "hw:vibemicarray,0":
@@ -320,10 +314,10 @@ class AudioModule:
 
         if output is not None:
             print(f"[INFO]: Recording audio to: {output_file}")
-            return True, output_file
+            return True
         else:
             print("[ERR]: Failed to record audio.")
-            return False, output_file
+            return False
     
     def is_loopback_device(self, device) -> bool:
         """

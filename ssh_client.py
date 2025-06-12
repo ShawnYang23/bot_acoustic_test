@@ -134,33 +134,41 @@ class SSHClient:
             print(f"[ERR]: Failed to check file existence: {e}")
             return False
 
-    def is_dir(self, remote_dir):
+    def is_dir(self, remote_path):
         """
         Check if a directory exists on the remote server.
         """
         try:
-            command = f"test -d {remote_dir} && echo 'Directory exists' || echo 'Directory does not exist'"
+            command = f"test -d {remote_path} && echo 'Directory exists' || echo 'Directory does not exist'"
             output = self.execute_command(command)
             return "Directory exists" in output
         except Exception as e:
             print(f"[ERR]: Failed to check directory existence: {e}")
             return False
     
-    def get_file_name_list(self, remote_dir) -> list:
+    def get_file_name_list(self, remote_path, file_type="all") -> list:
         """
         Get a list of files in a directory on the remote server.
         """
         try:
-            if not self.is_dir(remote_dir):
-                print(f"[ERR]: Directory {remote_dir} does not exist.")
-                return []
+            remote_dir = os.path.dirname(remote_path)
+            keyword = os.path.basename(remote_path)
+            if file_type == ".wav":
+                # List wav files and directories
+                command = f"find {remote_dir} -maxdepth 1 \\( -type f -name '*.wav' -o -type d \\) -exec sh -c 'if [ -d \"$1\" ];then echo \"$1/\"; else echo \"$1\"; fi' sh {{}} \\;"
+            elif file_type == "dir":
+                command = f"ls -d {remote_dir}/*/ | awk '{{print $1\"/\"}}'"
+            else:
+                command = f"ls {remote_dir} | awk '{{if (-d $1) print $1\"/\"; else print $1}}'"
 
-            command = f"ls {remote_dir}"
             output = self.execute_command(command)
             if output:
                 file_list = output.split()
                 for i in range(len(file_list)):
                     file_list[i] = os.path.join(remote_dir, file_list[i])
+                if keyword:
+                    file_list = [f for f in file_list if keyword in f]
+                file_list = [f + os.path.sep if os.path.isdir(f) else f for f in file_list]
                 return file_list
             else:
                 print(f"[ERR]: No files found in directory {remote_dir}.")
@@ -169,9 +177,9 @@ class SSHClient:
             print(f"[ERR]: Failed to get file list from {remote_dir}: {e}")
             return []
 
-    def reset(self, args):
+    def setup(self, args):
         """
-        Reset the remote system by checking if the root directory is writable,
+        Setup the remote system by checking if the root directory is writable,
         creating necessary directories, copying test audio files, and preparing the local system.
         """
         # Check if the root directory is writable and remount if necessary
@@ -182,18 +190,16 @@ class SSHClient:
         command = "mkdir -p /root/plays /root/records"
         self.execute_command(command)
         print("[init]: Remote work directories are created")
-        # Restart alsa service
-        command = f"pkill -f 'arecord|aplay|cras_test_client|scp'"
+        return True
+    
+    def reset(self):
+        """
+        Reset the remote system by stopping all audio-related processes and clearing directories.
+        """
+        # Stop all audio-related processes
+        command = "pkill -f 'arecord|aplay|cras_test_client|scp'"
         self.execute_command(command)
-        # Copy the test audio files to the remote system
-        command = f"sshpass -p {self.password} rsync -avz ./plays/ {self.username}@{self.hostname}:/root/plays"
-        subprocess.run(command, shell=True, check=True)
-        print("[init]: Remote test audio files are prepared")
-        # Create a tmp directory in the local system
-        command = f"mkdir -p ./tmp/"
-        subprocess.run(command, shell=True, check=True)
-        print("[init]: Reset alsa client")
-        print("[init]: Remote system is initialized")
+        print("[reset]: All audio-related processes stopped")        
         return True
 
     def get_speaker_list(self) -> list:

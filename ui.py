@@ -13,6 +13,7 @@ from functools import partial
 from ssh_client import SSHClient
 from audio_module import AudioModule
 from audio_analyzer import AudioAnalyzer
+import subprocess
 
 class RemoteHostApp:
     def __init__(self, root):
@@ -35,6 +36,8 @@ class RemoteHostApp:
         self.default_mic = "vibemicarray"
         self.default_font_size = int(self.get_config("Settings", "font_size", fallback=12))
         self.language = self.get_config("Settings", "language", fallback="en")
+        self.remote_root_path = self.get_config("File", "remote_root_path", fallback="/root/")
+        self.local_root_path = self.get_config("File", "local_root_path", fallback="./")
 
         # Audio settings
         self.sampling_rate = self.get_config("Audio", "sampling_rate", fallback="48000")
@@ -44,10 +47,10 @@ class RemoteHostApp:
         self.rec_dur = self.get_config("Audio", "rec_dur", fallback="10")
         self.rec_device = self.get_config("Audio", "rec_device", fallback=self.default_mic)
         self.rec_engine = self.get_config("Audio", "rec_engine", fallback="alsa")
-        self.rec_path = self.get_config("Audio", "rec_path", fallback="/root/records/")
+        self.rec_path = self.get_config("Audio", "rec_path", fallback="./records/")
         self.play_device = self.get_config("Audio", "play_device", fallback=self.default_speaker)
         self.play_engine = self.get_config("Audio", "play_engine", fallback="cras")
-        self.play_path = self.get_config("Audio", "play_path", fallback="/root/plays/")
+        self.play_path = self.get_config("Audio", "play_path", fallback="./plays/")
 
         # Audio analyzer settings
         self.analysis_method = self.get_config("Analyser", "method", fallback="DOA")
@@ -127,6 +130,10 @@ class RemoteHostApp:
                 "play_engine": "cras",
                 "play_path": "/root/plays/"
             }
+            config["File"] = {
+                "remote_root_path": "/root/",
+                "local_root_path": f"{os.getcwd()}/"
+            }
             config["Analyser"] = {
                 "method": "DOA",
                 "ref_audio": "./plays/ref.wav",
@@ -135,7 +142,7 @@ class RemoteHostApp:
             with open(self.config_file, 'w') as configfile:
                 config.write(configfile)
 
-    def on_widget_change(self, widget, section, option, *args):
+    def on_widget_change_save(self, widget, section, option, *args):
         """
         Callback function to handle changes in widget values.
         Updates the configuration file with the new value.
@@ -143,7 +150,26 @@ class RemoteHostApp:
         value = widget.get()
         self.set_config(section, option, value)
         # print(f"[INFO]: {section}.{option} changed to {value}")
-    
+
+    def on_widget_change_update(self, widget, is_local=True, file_type="all", *args):
+        """
+        Callback function to handle changes in widget values.
+        Updates the local variable with the new value.
+        """
+        file_path = widget.get()
+        if is_local:
+            file_list = self.get_file_name_list(file_path, file_type)
+            if file_list:
+                widget.config(values=file_list)
+                    # widget.set(file_list[0])  # Set the first file as default
+        else:
+            if self.ssh_client and self.ssh_client.is_connected():
+                file_list = self.ssh_client.get_file_name_list(file_path, file_type)
+                if file_list:
+                    widget.config(values=file_list)
+                    # widget.set(file_list[0])  # Set the first file as default
+        
+
     def get_config(self, section, option, fallback=None):
         """
         Get a configuration value from the config file.
@@ -194,7 +220,7 @@ class RemoteHostApp:
         tk.Label(ssh_frame, text=self.get_text("Hostname: ")).grid(
             row=0, column=0, sticky="w", padx=5, pady=5)
         self.hostname_var = tk.StringVar(value=self.hostname)
-        self.hostname_var.trace_add("write", partial(self.on_widget_change, self.hostname_var,
+        self.hostname_var.trace_add("write", partial(self.on_widget_change_save, self.hostname_var,
                                                      "SSH", "hostname"))
         self.hostname_entry = tk.Entry(ssh_frame, textvariable=self.hostname_var)
         self.hostname_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
@@ -203,7 +229,7 @@ class RemoteHostApp:
         tk.Label(ssh_frame, text=self.get_text("Username: ")).grid(
             row=1, column=0, sticky="w", padx=5, pady=5)
         self.username_var = tk.StringVar(value=self.username)
-        self.username_var.trace_add("write", partial(self.on_widget_change, self.username_var,
+        self.username_var.trace_add("write", partial(self.on_widget_change_save, self.username_var,
                                                      "SSH", "username"))
         self.username_entry = tk.Entry(ssh_frame, textvariable=self.username_var)
         self.username_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
@@ -212,7 +238,7 @@ class RemoteHostApp:
         tk.Label(ssh_frame, text=self.get_text("Password: ")).grid(
             row=2, column=0, sticky="w", padx=5, pady=5)
         self.password_var = tk.StringVar(value=self.password)
-        self.password_var.trace_add("write", partial(self.on_widget_change, self.password_var,
+        self.password_var.trace_add("write", partial(self.on_widget_change_save, self.password_var,
                                                         "SSH", "password"))
         self.password_entry = tk.Entry(ssh_frame, textvariable=self.password_var, show="*")
         self.password_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
@@ -229,13 +255,23 @@ class RemoteHostApp:
         self.status_label = tk.Label(ssh_frame, text=self.get_text("Status: Not connected"), fg="red")
         self.status_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew", padx=5)
 
-        # Remote Reset button
-        reset_button = tk.Button(ssh_frame, text=self.get_text("Remote Reset"), command=self.remote_reset)
+        # System Reset button
+        reset_button = tk.Button(ssh_frame, text=self.get_text("System Reset"), command=self.system_reset)
         reset_button.grid(row=5, column=0, sticky="ew", padx=5, pady=10)
 
         # UI Refresh button
         ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("UI Fresh"), command=self.refresh_ui)
         ui_fresh_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
+
+        # Sync file button
+        self.sync_mode_var = tk.StringVar(value="merge")
+        mode_list = ["merge", "local", "remote"]
+        self.sync_mode_combobox = ttk.Combobox(ssh_frame, textvariable=self.sync_mode_var,
+                                                values=mode_list, state="readonly")
+        self.sync_mode_combobox.grid(row=6, column=0, sticky="ew", padx=5, pady=10)
+
+        sync_file_button = tk.Button(ssh_frame, text=self.get_text("Sync File"), command=self.sync_files)
+        sync_file_button.grid(row=6, column=1, sticky="ew", padx=5, pady=10)
 
         # log_frame and its internal widgets
         self.log_frame = tk.Frame(self.page_home, relief=tk.SUNKEN, borderwidth=2)
@@ -346,18 +382,27 @@ class RemoteHostApp:
         upload_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         # Upload source path label and entry
-        update_src_label = tk.Label(upload_frame, text=self.get_text("Source Path:"))
+        update_src_label = tk.Label(upload_frame, text=self.get_text("Local Path:"))
         update_src_label.grid(row=1, column=0, pady=5, sticky="e")
-        self.upload_entry_src = tk.Entry(upload_frame)
-        self.upload_entry_src.insert(tk.END, "./tmp/")  # Default source path
-        self.upload_entry_src.grid(row=1, column=1, pady=5, sticky="ew")
+        self.upload_src_var = tk.StringVar(value=self.local_root_path)  # Default source path
+        self.upload_src_var.trace_add("write", partial(self.on_widget_change_save, self.upload_src_var,
+                                                       "File", "local_root_path"))
+        self.upload_combobox_src = ttk.Combobox(upload_frame, textvariable=self.upload_src_var)
+        self.upload_src_var.trace_add("write", partial(self.on_widget_change_update, 
+                                                       self.upload_combobox_src))
+        self.upload_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Upload destination path label and entry
-        update_dest_label = tk.Label(upload_frame, text=self.get_text("Destination Path:"))
+        update_dest_label = tk.Label(upload_frame, text=self.get_text("Remote Path:"))
         update_dest_label.grid(row=2, column=0, pady=5, sticky="e")
-        self.upload_entry_dest = tk.Entry(upload_frame)
-        self.upload_entry_dest.insert(tk.END, "/root/plays/")  # Default destination path
-        self.upload_entry_dest.grid(row=2, column=1, pady=5, sticky="ew")
+        self.upload_dest_var = tk.StringVar(value=self.remote_root_path)  # Default destination path
+        self.upload_dest_var.trace_add("write", partial(self.on_widget_change_save, self.upload_dest_var,
+                                                         "File", "remote_root_path"))
+        self.upload_combobox_dest = ttk.Combobox(upload_frame, textvariable=self.upload_dest_var)
+        self.upload_dest_var.trace_add("write", partial(self.on_widget_change_update, 
+                                                        self.upload_combobox_dest,
+                                                        False))
+        self.upload_combobox_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
         # Download Frame setup
         download_frame = tk.LabelFrame(
@@ -378,18 +423,27 @@ class RemoteHostApp:
         download_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         # Download source path label and entry
-        download_src_label = tk.Label(download_frame, text=self.get_text("Source Path:"))
+        download_src_label = tk.Label(download_frame, text=self.get_text("Remote Path:"))
         download_src_label.grid(row=1, column=0, pady=5, sticky="e")
-        self.download_var = tk.StringVar(value="/root/records/")  # Default destination path
+        self.download_var = tk.StringVar(value=self.remote_root_path)  # Default destination path
+        self.download_var.trace_add("write", partial(self.on_widget_change_save, self.download_var,
+                                                     "File", "remote_root_path"))
         self.download_combobox_src = ttk.Combobox(download_frame, textvariable=self.download_var)
+        self.download_var.trace_add("write", partial(self.on_widget_change_update, 
+                                                    self.download_combobox_src,
+                                                    False))
         self.download_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Download destination path label and entry
-        download_dest_label = tk.Label(download_frame, text=self.get_text("Destination Path:"))
+        download_dest_label = tk.Label(download_frame, text=self.get_text("Local Path:"))
         download_dest_label.grid(row=2, column=0, pady=5, sticky="e")
-        self.download_entry_dest = tk.Entry(download_frame)
-        self.download_entry_dest.insert(tk.END, "./tmp/")  # Default destination path
-        self.download_entry_dest.grid(row=2, column=1, pady=5, sticky="ew")
+        self.download_dest_var = tk.StringVar(value=self.local_root_path)  # Default destination path
+        self.download_dest_var.trace_add("write", partial(self.on_widget_change_save, self.download_dest_var,
+                                                           "File", "local_root_path"))
+        self.download_combobox_dest = ttk.Combobox(download_frame, textvariable=self.download_dest_var)
+        self.download_dest_var.trace_add("write", partial(self.on_widget_change_update, 
+                                                          self.download_combobox_dest))
+        self.download_combobox_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
 
     def setup_page_aduios(self):
@@ -447,7 +501,7 @@ class RemoteHostApp:
         self.sampling_rate_label = tk.Label(self.audio_settings_frame, text="Rate:")
         self.sampling_rate_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.sampling_rate_var = tk.StringVar(value=self.sampling_rate)
-        self.sampling_rate_var.trace_add("write", partial(self.on_widget_change, self.sampling_rate_var,
+        self.sampling_rate_var.trace_add("write", partial(self.on_widget_change_save, self.sampling_rate_var,
                                                            "Audio", "sampling_rate"))
         self.sampling_rate_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.sampling_rate_var,
                                                     values=["8000", "16000", "44100", "48000", "96000"],
@@ -458,7 +512,7 @@ class RemoteHostApp:
         self.channels_label = tk.Label(self.audio_settings_frame, text="Chns:")
         self.channels_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.channels_var = tk.StringVar(value=self.channels)
-        self.channels_var.trace_add("write", partial(self.on_widget_change, self.channels_var,
+        self.channels_var.trace_add("write", partial(self.on_widget_change_save, self.channels_var,
                                                      "Audio", "channels"))
         self.channels_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.channels_var,
                                             values=["1", "2", "6", "8"], state="readonly")
@@ -468,7 +522,7 @@ class RemoteHostApp:
         self.data_type_label = tk.Label(self.audio_settings_frame, text="Fmt:")
         self.data_type_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.data_type_var = tk.StringVar(value=self.data_type)
-        self.data_type_var.trace_add("write", partial(self.on_widget_change, self.data_type_var,
+        self.data_type_var.trace_add("write", partial(self.on_widget_change_save, self.data_type_var,
                                                          "Audio", "data_type"))
         self.data_type_entry = ttk.Combobox(self.audio_settings_frame, textvariable=self.data_type_var,
                                             values=["S16_LE", "S24_LE", "S32_LE", "FLOAT_LE"],
@@ -479,7 +533,7 @@ class RemoteHostApp:
         self.file_type_label = tk.Label(self.audio_settings_frame, text="Type:")
         self.file_type_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.file_type_var = tk.StringVar(value=self.file_type)
-        self.file_type_var.trace_add("write", partial(self.on_widget_change, self.file_type_var,
+        self.file_type_var.trace_add("write", partial(self.on_widget_change_save, self.file_type_var,
                                                      "Audio", "file_type"))
         self.file_type_combobox = ttk.Combobox(self.audio_settings_frame, textvariable=self.file_type_var,
                                                   values=["wav", "pcm"], state="readonly")
@@ -498,7 +552,7 @@ class RemoteHostApp:
         self.rec_device_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")  
 
         self.rec_device_var = tk.StringVar(value=self.rec_device)
-        self.rec_device_var.trace_add("write", partial(self.on_widget_change, self.rec_device_var,
+        self.rec_device_var.trace_add("write", partial(self.on_widget_change_save, self.rec_device_var,
                                                               "Audio", "rec_device"))
         self.rec_device_combobox = ttk.Combobox(
             self.record_frame, textvariable=self.rec_device_var,
@@ -511,7 +565,7 @@ class RemoteHostApp:
         self.rec_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
         self.rec_engine_var = tk.StringVar(value=self.rec_engine)
-        self.rec_engine_var.trace_add("write", partial(self.on_widget_change, self.rec_engine_var,
+        self.rec_engine_var.trace_add("write", partial(self.on_widget_change_save, self.rec_engine_var,
                                                         "Audio", "rec_engine"))
         self.rec_engine_combobox = ttk.Combobox(
             self.record_frame, textvariable=self.rec_engine_var,
@@ -524,7 +578,7 @@ class RemoteHostApp:
         self.rec_dur_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
 
         self.rec_dur_var = tk.StringVar(value="10")
-        self.rec_dur_var.trace_add("write", partial(self.on_widget_change, self.rec_dur_var, "Audio", "rec_dur"))
+        self.rec_dur_var.trace_add("write", partial(self.on_widget_change_save, self.rec_dur_var, "Audio", "rec_dur"))
         self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur_var)
         self.rec_dur_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
 
@@ -538,9 +592,10 @@ class RemoteHostApp:
         self.record_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
 
         self.rec_path_var = tk.StringVar(value=self.rec_path)
-        self.rec_path_var.trace_add("write", partial(self.on_widget_change, self.rec_path_var,
+        self.rec_path_var.trace_add("write", partial(self.on_widget_change_save, self.rec_path_var,
                                                      "Audio", "rec_path"))
         self.rec_path_combobox = ttk.Combobox(self.record_frame, textvariable=self.rec_path_var)
+        self.rec_path_var.trace_add("write", partial(self.on_widget_change_update, self.rec_path_combobox, True, ".wav"))
         self.rec_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Player
@@ -556,7 +611,7 @@ class RemoteHostApp:
         self.play_deviece_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
 
         self.play_device_var = tk.StringVar(value=self.play_device)
-        self.play_device_var.trace_add("write", partial(self.on_widget_change, self.play_device_var,
+        self.play_device_var.trace_add("write", partial(self.on_widget_change_save, self.play_device_var,
                                                         "Audio", "play_device"))
         self.play_device_combobox = ttk.Combobox(
             self.play_frame, textvariable=self.play_device_var,
@@ -569,7 +624,7 @@ class RemoteHostApp:
         self.play_engine_label.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
         self.play_engine_var = tk.StringVar(value=self.play_engine)
-        self.play_engine_var.trace_add("write", partial(self.on_widget_change, self.play_engine_var,
+        self.play_engine_var.trace_add("write", partial(self.on_widget_change_save, self.play_engine_var,
                                                         "Audio", "play_engine"))
         self.play_engine_combobox = ttk.Combobox(
             self.play_frame, textvariable=self.play_engine_var,
@@ -595,10 +650,11 @@ class RemoteHostApp:
         self.play_button.grid(row=2, column=0, padx=(0, 5), pady=5, sticky="w")
         
         self.play_path_var = tk.StringVar(value=self.play_path)
-        self.play_path_var.trace_add("write", partial(self.on_widget_change, self.play_path_var,
+        self.play_path_var.trace_add("write", partial(self.on_widget_change_save, self.play_path_var,
                                                              "Audio", "play_path"))
-        self.file_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.play_path_var)
-        self.file_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+        self.play_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.play_path_var)
+        self.play_path_var.trace_add("write", partial(self.on_widget_change_update, self.play_path_combobox, True, ".wav"))
+        self.play_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Analyzer        
         # Configure analysis_frame grid layout
@@ -612,7 +668,7 @@ class RemoteHostApp:
         self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
-        self.analysis_method_var.trace_add("write", partial(self.on_widget_change, self.analysis_method_var,
+        self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
         methods = ["PESQ", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
@@ -626,18 +682,20 @@ class RemoteHostApp:
         ref_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
         self.ref_audio_var = tk.StringVar(value=self.ref_audio)
-        self.ref_audio_var.trace_add("write", partial(self.on_widget_change, self.ref_audio_var,
+        self.ref_audio_var.trace_add("write", partial(self.on_widget_change_save, self.ref_audio_var,
                                                      "Analyser", "ref_audio"))
         self.ref_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.ref_audio_var)
+        self.ref_audio_var.trace_add("write", partial(self.on_widget_change_update, self.ref_audio_combobox, True, ".wav"))
         self.ref_audio_combobox.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         
         self.target_audio_var = tk.StringVar(value=self.target_audio)
-        self.target_audio_var.trace_add("write", partial(self.on_widget_change, self.target_audio_var,
+        self.target_audio_var.trace_add("write", partial(self.on_widget_change_save, self.target_audio_var,
                                                      "Analyser", "target_audio"))
         self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_var)
+        self.target_audio_var.trace_add("write", partial(self.on_widget_change_update, self.target_audio_combobox, True, ".wav"))
         self.target_audio_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
@@ -713,7 +771,7 @@ class RemoteHostApp:
         size_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
 
         self.width_var = tk.StringVar(value=str(self.width))
-        self.width_var.trace_add("write", partial(self.on_widget_change, self.width_var,
+        self.width_var.trace_add("write", partial(self.on_widget_change_save, self.width_var,
                                                      "Settings", "width"))
         self.width_entry = tk.Entry(para_frame, textvariable=self.width_var)
         self.width_entry.grid(row=0, column=1, sticky="ew", padx=5)
@@ -722,7 +780,7 @@ class RemoteHostApp:
         x_label.grid(row=0, column=2, sticky="ew", padx=0)
 
         self.height_var = tk.StringVar(value=str(self.height))
-        self.height_var.trace_add("write", partial(self.on_widget_change, self.height_var,
+        self.height_var.trace_add("write", partial(self.on_widget_change_save, self.height_var,
                                                      "Settings", "height"))
         self.height_entry = tk.Entry(para_frame, textvariable=self.height_var)
         self.height_entry.grid(row=0, column=3, sticky="ew", padx=5)
@@ -732,7 +790,7 @@ class RemoteHostApp:
         font_size_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
    
         self.font_size_var = tk.StringVar(value=str(self.default_font_size))
-        self.font_size_var.trace_add("write", partial(self.on_widget_change, self.font_size_var,
+        self.font_size_var.trace_add("write", partial(self.on_widget_change_save, self.font_size_var,
                                                      "Settings", "font_size"))
         self.font_size_entry = tk.Entry(para_frame, textvariable=self.font_size_var)
         self.font_size_entry.grid(row=1, column=1, sticky="ew", padx=5)
@@ -742,7 +800,7 @@ class RemoteHostApp:
         language_label.grid(row=2, column=0, sticky="e", padx=5, pady=5)
 
         self.language_var = tk.StringVar(value=self.language)
-        self.language_var.trace_add("write", partial(self.on_widget_change, self.language_var,
+        self.language_var.trace_add("write", partial(self.on_widget_change_save, self.language_var,
                                                      "Settings", "language"))
         language_combobox = ttk.Combobox(
             para_frame, textvariable=self.language_var,
@@ -890,7 +948,9 @@ class RemoteHostApp:
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
             # Reset remote sever
-            self.remote_reset('mute')
+            self.system_reset(flag='mute')
+            self.system_setup()
+            self.sync_files(force=True, mode="merge")
             # Update the device and folder menus
             self.update_device_menu()
             self.update_folder_menu()
@@ -919,13 +979,13 @@ class RemoteHostApp:
     def upload_file(self):
         if self.ssh_client:
             print("[INFO]: Uploading file...") 
-            src_path = self.upload_entry_src.get()
+            src_path = self.upload_combobox_src.get()
             if not os.path.exists(src_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Source file does not exist"))
                 print("[ERR]: Source file does not exist") 
                 return
-            dest_path = self.upload_entry_dest.get()
+            dest_path = self.upload_combobox_dest.get()
             if not self.ssh_client.is_dir(dest_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Destination path directory does not exist"))
@@ -947,7 +1007,7 @@ class RemoteHostApp:
     def download_file(self):
         if self.ssh_client:
             print("[INFO]: Downloading file...") 
-            src_path = self.download_entry_src.get()
+            src_path = self.download_combobox_src.get()
             if not self.ssh_client.file_exists(src_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Source file does not exist on remote host"))
@@ -1033,7 +1093,7 @@ class RemoteHostApp:
             return
         percent = int((elapsed / total) * 100)
         progress_bar['value'] = percent
-
+        
     def audio_recorder(self) -> bool:
         if self.audio_module is None:
             messagebox.showerror(self.get_text("Error"),
@@ -1051,28 +1111,27 @@ class RemoteHostApp:
         )
         # Start recording progress
         print("[INFO]: Starting audio recording...") 
-        audio_dir_record = self.rec_path_combobox.get()
-        if self.ssh_client.is_dir(audio_dir_record):
+        record_path = self.rec_path_combobox.get()
+        if self.ssh_client.is_dir(record_path):
             # messagebox.showerror(self.get_text("Error"), self.get_text("Recording path is a directory, please specify a file path"))
             print("[INFO]: Recording path is a directory, please specify a file path") 
             return False
-        new_audio_dir = audio_dir_record
-        ret,new_audio_dir = self.audio_module.record_audio(audio_dir_record)
-        if new_audio_dir != audio_dir_record:
-            print(f"[WARN]: Audio recorded to {audio_dir_record}") 
-            self.rec_path_combobox.set(new_audio_dir)  # Update the path combobox to new recorded file
-            messagebox.showinfo(self.get_text("warning"), f"{self.get_text('Audio recorded to')} {audio_dir_record}")
+        # Check if the recording path already exists
+        if os.path.exists(record_path):
+            result = messagebox.askyesno(
+                self.get_text("Warning"),
+                f"{self.get_text('Recording path already exists, do you want to overwrite it?')}\n{record_path}")
+            if not result:
+                print("[INFO]: Recording cancelled by user") 
+                return False
+        ret = self.audio_module.record_audio(record_path)
         # download the recorded file to local
         if ret is True:
-            print("[INFO]: Downloading recorded audio file to local dir: ./tmp/ ") 
-            local_record_path = "./tmp/"
-            if not os.path.exists(local_record_path):
-                os.makedirs(local_record_path)
-            local_record_path = os.path.join(local_record_path, os.path.basename(new_audio_dir))
+            print(f"[INFO]: Downloading recorded audio file to local dir: {self.rec_path}")
+            remote_rec_path = self.audio_module.audio_dir_record + os.path.basename(record_path)
             try:
-                self.ssh_client.download_file(new_audio_dir, local_record_path)
-                print(f"[INFO]: Recorded audio file downloaded to {local_record_path}") 
-                # messagebox.showinfo(self.get_text("Success"), f"{self.get_text('Recorded audio file downloaded to')} {local_record_path}")
+                self.ssh_client.download_file(remote_rec_path, self.rec_path)
+                print(f"[INFO]: Recorded audio file downloaded to {self.rec_path}") 
             except Exception as e:
                 messagebox.showerror(self.get_text("Error"),
                                      f"{self.get_text('Download failed')}: {str(e)}")
@@ -1119,7 +1178,7 @@ class RemoteHostApp:
 
     def audio_player(self) -> bool:
         print("[INFO]: Play recording...") 
-        audio_file = self.file_path_combobox.get()
+        audio_file = self.play_path_combobox.get()
         if self.audio_module is None:
             messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized"))
             return False
@@ -1144,7 +1203,7 @@ class RemoteHostApp:
         return ret
         
     def audio_player_thread(self):
-        wav_info = self.audio_module.get_wav_info(self.file_path_combobox.get())
+        wav_info = self.audio_module.get_wav_info(self.play_path_combobox.get())
         if wav_info is None:
             messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or file type error"))
             return
@@ -1165,7 +1224,7 @@ class RemoteHostApp:
         channels = self.audio_module.channels = int(wav_info['channels'])
         sample_fmt = self.audio_module.audio_format = wav_info['sample_fmt']
         self.file_type.set('wav')  # Set file type from WAV info
-        print(f"[INFO]: Audio file: {self.file_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
+        print(f"[INFO]: Audio file: {self.play_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
               f"Duration: {total_sec} sec")
         self.play_progress_running = True
         device = self.play_device_var.get()
@@ -1252,46 +1311,63 @@ class RemoteHostApp:
         self.rec_device_combobox['values'] = new_mic_list
         self.rec_device_combobox.current(def_mic_idx)
     
-    def get_file_name_list(self, path):
+    def get_file_name_list(self, path, file_type="all"):
         """
         Get a list of file names in the specified directory on the local filesystem.
         """
-        if not os.path.exists(path):
-            messagebox.showerror(self.get_text("Error"), self.get_text(f"Directory {path} does not exist"))
-            return []
+        dir_path = os.path.dirname(path)
+        keyword = os.path.basename(path)
+        if not os.path.exists(dir_path):
+            # messagebox.showerror(self.get_text("Error"), self.get_text(f"Directory {path} does not exist"))
+            return None
         try:
-            files = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)) and f.endswith(('.wav'))]
+            if file_type == ".wav":
+                files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith('.wav') or os.path.isdir(os.path.join(dir_path, f))]
+            elif file_type == "dir":
+                files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if os.path.isdir(os.path.join(dir_path, f))]
+            else:
+                files = [os.path.join(dir_path, f) for f in os.listdir(dir_path)]
+            files = [f for f in files if keyword is None or keyword in f]
+            # Ensure directories end with a separator
+            files = [f+ os.sep if os.path.isdir(f) else f for f in files]
             return sorted(files)
         except Exception as e:
             messagebox.showerror(self.get_text("Error"), f"{self.get_text('Failed to list files')}: {str(e)}")
-            return []
+            return None
         
     def update_folder_menu(self):
         print(f"[init]: Updating file and folder paths...")
+        # local file paths
+        local_rec_menu = self.get_file_name_list(self.rec_path, file_type=".wav")
+        if local_rec_menu is not None:
+            self.rec_path_combobox.config(values=local_rec_menu)
+            self.target_audio_combobox.config(values=local_rec_menu)
+
+        local_play_menu = self.get_file_name_list(self.play_path, file_type=".wav")
+        if local_play_menu is not None:
+            self.play_path_combobox.config(values=local_play_menu)
+            self.ref_audio_combobox.config(values=local_play_menu)
+
+        local_root_menu = self.get_file_name_list(self.local_root_path)
+        if local_root_menu is not None:
+            self.upload_combobox_src.config(values=local_root_menu)
+            self.download_combobox_dest.config(values=local_root_menu)
+        
+        # remote file paths
         if not self.ssh_client:
             messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
             return None
-        play_menu = self.ssh_client.get_file_name_list("/root/plays/")
-        self.file_path_combobox.config(values=play_menu)
-
-        rec_menu = self.ssh_client.get_file_name_list("/root/records/")
-        self.rec_path_combobox.config(values=rec_menu)
-
-        local_rec_menu = self.get_file_name_list("./records/")
-        self.target_audio_combobox.config(values=local_rec_menu)
-
-        local_play_menu = self.get_file_name_list("./plays/")
-        self.ref_audio_combobox.config(values=local_play_menu)
-
-        # Update the upload/download folder paths
-        self.download_combobox_src.config(values=rec_menu)
+        remote_root_menu = self.ssh_client.get_file_name_list(self.remote_root_path)
+        if remote_root_menu is not None:
+            self.upload_combobox_dest.config(values=remote_root_menu)
+            self.download_combobox_src.config(values=remote_root_menu)
     
     def toggle_analysis(self):
         if self.analysis_progress_running:
             print("[INFO]: Analysis already running, stopping...")
             self.analysis_progress_running = False
             self.analysis_progress.stop()
-            self.remote_reset('mute') 
+            self.system_reset('mute') 
             self.analysis_button.config(text=self.get_text("Run Analysis"))
         else:
             print("[INFO]: Starting audio analysis...")
@@ -1367,20 +1443,80 @@ class RemoteHostApp:
         messagebox.showinfo(self.get_text("Success"),
                             self.get_text("UI refreshed successfully"))
 
-    def remote_reset(self, flag="normal"):
+    def system_reset(self, flag="normal"):
         """
         Reset the remote host.
         """
         if self.ssh_client:
-            self.ssh_client.reset(self.ssh_client)
-            print("[INFO]: Remote host reset successfully")
+            self.ssh_client.reset()
             if 'mute' not in flag:
               messagebox.showinfo(self.get_text("Success"),
                                   self.get_text("Remote host reset successfully"))
         else:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Not connected to remote host"))
+    
+    def system_setup(self):
+        """
+        Set up the remote system by creating necessary directories and files.
+        """
+        if not self.ssh_client:
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Not connected to remote host"))
+            return False
+        try:
+            # remote system setup
+            self.ssh_client.setup(self.ssh_client)
+            #local system setup
+            command = f"mkdir -p ./tmp/"
+            subprocess.run(command, shell=True, check=True)
+            print("[init]: Remote/Local system is initialized")
+            return True
+        except Exception as e:
+            messagebox.showerror(self.get_text("Error"),
+                                 f"{self.get_text('Failed to set up remote system')}: {str(e)}")
+            print("[ERR]: Failed to set up remote system: ") + str(e) 
+            return False
+    
+    def sync_files(self, force=False, mode="merge"):
+        """
+        Synchronize files between local and remote directories.
+        local:[./plays/] <-> remote:[/root/plays/]
+        local:[./records/] <-> remote:[/root/records/]
+        """
+        if not self.ssh_client:
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Not connected to remote host"))
+            return False
+        
+        if not force:
+            mode = self.sync_mode_combobox.get()
+        # Sync local files to remote
+        if mode == "local":
+            sync_play = f"sshpass -p {self.password} rsync -avz --delete ./plays/ {self.username}@{self.hostname}:/root/plays/"
+            sync_record = f"sshpass -p {self.password} rsync -avz --delete ./records/ {self.username}@{self.hostname}:/root/records/"
+            result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite and delete remote files.")
+            if not result:
+                print("[INFO]: Sync operation cancelled by user")
+                return False
+        elif mode == "remote":
+            sync_play = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/plays/ ./plays/"
+            sync_record = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/records/ ./records/"
+            result = messagebox.askyesno("Confirm", "Do you want to sync remote files to local? This might overwrite and delete local files.")
+            if not result:
+                print("[INFO]: Sync operation cancelled by user")
+                return False
+        else: #merge
+            sync_play = f"sshpass -p {self.password} rsync -avz ./plays/ {self.username}@{self.hostname}:/root/plays/"
+            sync_record = f"sshpass -p {self.password} rsync -avz ./records/ {self.username}@{self.hostname}:/root/records/"
+            subprocess.run(sync_play, shell=True, check=True)
+            subprocess.run(sync_record, shell=True, check=True)
+            sync_play = f"sshpass -p {self.password} rsync -avz {self.username}@{self.hostname}:/root/plays/ ./plays/"
+            sync_record = f"sshpass -p {self.password} rsync -avz {self.username}@{self.hostname}:/root/records/ ./records/"
 
+        subprocess.run(sync_play, shell=True, check=True)
+        subprocess.run(sync_record, shell=True, check=True)
+        print(f"[sync]: Synchronization completed successfully, mode: {mode}")
 
 if __name__ == "__main__":
     root = tk.Tk()
