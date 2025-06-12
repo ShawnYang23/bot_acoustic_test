@@ -6,49 +6,56 @@ import numpy as np
 import wave
 import matplotlib.pyplot as plt
 import soundfile as sf
+from pesq_score import PesqScore
 
 
 class AudioAnalyzer:
     def __init__(self, audio_module):
         self.audio_module = audio_module
         self.ssh_client = audio_module.ssh_client
+        self.pesq_analyzer = PesqScore()
         if not self.ssh_client.is_connected():
             raise Exception("[ERR]: SSH client is not connected. Cannot initialize AudioAnalyzer.")
+        
+        self.default_analyze_sec = 10 # Default analyze duration in seconds
     
-    def analyze_audio(self, ref_audio:str , target_audio: str, method: str = "PESQ"):
+    def audio_analyzing(self, ref_audio:str , target_audio: str, method: str = "PESQ"):
         """
         Analyze the audio file and return its properties.
         """
         if not os.path.exists(target_audio):
-            print(f"[ERR]: Audio file {target_audio} does not exist.")
-            return None
-        # check if ssh client is connected
-        if not self.ssh_client.is_connected():
-            print("[ERR]: SSH client is not connected.")
-            return None
-        
-        info = self.audio_module.get_wav_info(target_audio)
-        if info is None:
-            print(f"[ERR]: Failed to get audio info for {target_audio}.")
-            return None
-        chns = info.get('channels', 0)
+            print(f"[ERR]: Target Audio file {target_audio} does not exist.")
+            return False
         # analyze audio file
         if method == "PESQ":
-            pass
+            if not os.path.exists(ref_audio):
+                print(f"[ERR]: Refe Audio file {ref_audio} does not exist.")
+                return False
+            print(f"[INFO]: Analyzing audio file {target_audio} with PESQ against reference {ref_audio}.")
+            return self.pesq_analyzing(ref_audio, target_audio)   
         elif method == "Reverb":
             pass
         elif method == "SNR":
             pass
         elif method == "DOA":
+            info = self.audio_module.get_wav_info(target_audio)
+            if info is None:
+                print(f"[ERR]: Failed to get audio info for {target_audio}.")
+                return False
+            chns = info.get('channels', 0)
             # Analyze for direction of arrival (DOA)
             print(f"[INFO]: Analyzing audio file channels {chns} for DOA.")
             if chns == 8:
-                ret = self.doa_analyzer_audio(target_audio)
+                # check if ssh client is connected
+                if not self.ssh_client.is_connected():
+                    print("[ERR]: SSH client is not connected.")
+                    return False
+                ret = self.doa_analyzing(target_audio)
                 if not ret:
                     print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
                     return False
             elif chns == 9:
-                ret = self.doa_analyzer_file(target_audio)
+                ret = self.doa_file_analyzing(target_audio)
                 if not ret:
                     print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
                     return False
@@ -66,7 +73,7 @@ class AudioAnalyzer:
             print(f"[ERR]: Unsupported analysis method: {method}")
             return None
         
-    def doa_analyzer_audio(self, src_audio):
+    def doa_analyzing(self, src_audio):
         """
         Analyze the given audio file for direction of arrival (DOA).
         """
@@ -120,13 +127,13 @@ class AudioAnalyzer:
             local_ssl_file_name = f"./records/ssl_{src_base_name}"
             self.ssh_client.download_file(remote_ssl_file_path, local_ssl_file_name)
             print(f"[INFO]: DOA analysis Stage1 completed. SSL file saved at {local_ssl_file_name}.")
-            return self.doa_analyzer_file(local_ssl_file_name)
+            return self.doa_file_analyzing(local_ssl_file_name)
             
         except Exception as e:
             print(f"[ERR]: Failed to analyze audio file {src_audio}: {e}")
             return False, None
         
-    def doa_analyzer_file(self, ssl_file):
+    def doa_file_analyzing(self, ssl_file):
         if not os.path.exists(ssl_file):
             print(f"[ERR]: SSL file {ssl_file} does not exist.")
             return False
@@ -222,4 +229,19 @@ class AudioAnalyzer:
 
         except Exception as e:
             print(f"[ERR]: Exception occurred: {e}")
+            return False
+        
+    def pesq_analyzing(self, ref_audio, target_audio):
+        """
+        Analyze the audio file using PESQ.
+        """
+        if not os.path.exists(ref_audio) or not os.path.exists(target_audio):
+            print(f"[ERR]: Reference or target audio file does not exist.")
+            return False
+        
+        try:
+            self.pesq_analyzer.pesq_calc(ref_audio, target_audio)
+            return True
+        except Exception as e:
+            print(f"[ERR]: Failed to analyze audio file with PESQ: {e}")
             return False

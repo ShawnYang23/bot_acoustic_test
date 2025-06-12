@@ -13,7 +13,7 @@ from multiprocessing import Process
 import copy 
 
 from speech_quality_ana import *
-from pesq_score import pesq_calc
+from pesq_score import PesqScore
 
 cras_output_devices = []
 cras_input_devices = []
@@ -745,9 +745,9 @@ def audio_quality_record_analysis(args):
 
     print("Audio recording and playback completed.")
     
-    pesq_calc(ref_audio_path, [record_args.record_file], "nb")
+    pesq = PesqScore()
+    pesq.pesq_calc(ref_audio_path, [record_args.record_file])
 
-    
 
 def create_signal_handler(args):
     def signal_handler(sig, frame):

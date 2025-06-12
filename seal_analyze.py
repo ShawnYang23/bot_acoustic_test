@@ -51,7 +51,7 @@ def plot_all_channels(freqs_fft, fft_unsealed, fft_sealed, freqs_psd, psd_unseal
     print(f"📷 Result image saved: {output_img}")
 
 # Main analysis function
-def analyze_audio(unsealed_file, sealed_file):
+def audio_analyzing(unsealed_file, sealed_file):
     y1, sr1 = load_multichannel_audio(unsealed_file)
     y2, sr2 = load_multichannel_audio(sealed_file)
 
@@ -114,4 +114,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    analyze_audio(args.unsealed, args.sealed)
+    audio_analyzing(args.unsealed, args.sealed)

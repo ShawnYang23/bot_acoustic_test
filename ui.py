@@ -614,7 +614,7 @@ class RemoteHostApp:
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESG", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
+        methods = ["PESQ", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
@@ -628,8 +628,8 @@ class RemoteHostApp:
         self.ref_audio_var = tk.StringVar(value=self.ref_audio)
         self.ref_audio_var.trace_add("write", partial(self.on_widget_change, self.ref_audio_var,
                                                      "Analyser", "ref_audio"))
-        self.ref_audio_entry = tk.Entry(self.analysis_frame, textvariable=self.ref_audio_var)
-        self.ref_audio_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        self.ref_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.ref_audio_var)
+        self.ref_audio_combobox.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
@@ -1146,7 +1146,7 @@ class RemoteHostApp:
     def audio_player_thread(self):
         wav_info = self.audio_module.get_wav_info(self.file_path_combobox.get())
         if wav_info is None:
-            messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
+            messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or file type error"))
             return
         try:
             expect_duration = int(self.play_duration_entry.get())
@@ -1280,6 +1280,9 @@ class RemoteHostApp:
         local_rec_menu = self.get_file_name_list("./records/")
         self.target_audio_combobox.config(values=local_rec_menu)
 
+        local_play_menu = self.get_file_name_list("./plays/")
+        self.ref_audio_combobox.config(values=local_play_menu)
+
         # Update the upload/download folder paths
         self.download_combobox_src.config(values=rec_menu)
     
@@ -1298,21 +1301,21 @@ class RemoteHostApp:
     def audio_analyzer_thread(self):
         def task():
             start_time = time.time()
-            method = self.analysis_method.get()
-            ref_audio = self.ref_audio_entry.get()
+            method = self.analysis_method_combobox.get()
+            ref_audio = self.ref_audio_combobox.get()
             target_audio = self.target_audio_combobox.get()
-            wav_info = self.audio_module.get_wav_info(target_audio)
-            if wav_info is None:
-                messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
-                return
-            total_sec = int(wav_info['duration']) + 1  # Add 1 second buffer to avoid rounding issues
-            print(f"[INFO]: Starting audio analysis with method: {method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
-            if not os.path.exists(ref_audio):
-                print("[WARN]: Reference audio file does not exist") 
             if not os.path.exists(target_audio):
                 messagebox.showerror(self.get_text("Error"), self.get_text("Target audio file does not exist"))
                 print("[ERR]: Target audio file does not exist") 
                 return
+            total_sec = self.audio_analyzer.default_analyze_sec
+            if os.path.isfile(target_audio):
+                wav_info = self.audio_module.get_wav_info(target_audio)
+                if wav_info is None:
+                    messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
+                    return
+                total_sec = int(wav_info['duration']) + 1  # Add 1 second buffer to avoid rounding issues
+            print(f"[INFO]: Starting audio analysis with method: {method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
             
             def update_analyse_progress():
                 if not self.analysis_progress_running:
@@ -1330,7 +1333,7 @@ class RemoteHostApp:
             self.analysis_start_time = time.time()
             self.analysis_progress.after(0, update_analyse_progress)
             # Perform the audio analysis
-            result = self.audio_analyzer.analyze_audio(method=method, ref_audio=ref_audio, target_audio=target_audio)
+            result = self.audio_analyzer.audio_analyzing(method=method, ref_audio=ref_audio, target_audio=target_audio)
 
             def on_finish():
                 self.analysis_progress_running = False
