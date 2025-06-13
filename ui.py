@@ -32,8 +32,11 @@ class RemoteHostApp:
         self.default_aspect_ratio = (16, 9) # only support 16:9 aspect ratio
         self.min_width = 640
         self.max_width = 1920  # Maximum width for the window
-        self.default_speaker = "rockchipad82178"
-        self.default_mic = "vibemicarray"
+        self.cache_path = self.get_config("Settings", "cache_path", fallback="./cache/")
+        self.def_rec_path = self.get_config("Settings", "def_rec_path", fallback="./records/")
+        self.def_play_path = self.get_config("Settings", "def_play_path", fallback="./plays/")
+        self.default_speaker = self.get_config("Settings", "default_speaker", fallback="rockchipad82178")
+        self.default_mic = self.get_config("Settings", "default_mic", fallback="vibemicarray")
         self.default_font_size = int(self.get_config("Settings", "font_size", fallback=12))
         self.language = self.get_config("Settings", "language", fallback="en")
         self.remote_root_path = self.get_config("File", "remote_root_path", fallback="/root/")
@@ -102,12 +105,13 @@ class RemoteHostApp:
         If the file does not exist, create a new one with default values.
         """
         config = configparser.ConfigParser()
+        current_dir = f"{os.getcwd()}"
         if os.path.exists(self.config_file):
             return
         else:
             # Create default configuration
             config["SSH"] = {
-                "hostname": "192.168.50.198",
+                "hostname": "192.168.5x.xx", 
                 "username": "root",
                 "password": "test0000"
             }
@@ -116,6 +120,11 @@ class RemoteHostApp:
                 "font_size": "12",
                 "width": "1280",
                 "height": "720",
+                "cache_path": f"{current_dir}/cache/",
+                "def_rec_path": f"{current_dir}/records/",
+                "def_play_path": f"{current_dir}/plays/",
+                "default_speaker": "rockchipad82178",
+                "default_mic": "vibemicarray"
             }
             config["Audio"] = {
                 "channels": "8",
@@ -123,12 +132,12 @@ class RemoteHostApp:
                 "data_type": "S16_LE",
                 "file_type": "wav",
                 "rec_dur": "10",
-                "rec_device": f"{self.default_mic}",
+                "rec_device": "vibemicarray",
                 "rec_engine": "alsa",
-                "rec_path": "/root/records/",
-                "play_device": f"{self.default_speaker}",
+                "rec_path": f"{current_dir}/records/",
+                "play_device": "rockchipad82178",
                 "play_engine": "cras",
-                "play_path": "/root/plays/"
+                "play_path": f"{current_dir}/plays/"
             }
             config["File"] = {
                 "remote_root_path": "/root/",
@@ -136,8 +145,8 @@ class RemoteHostApp:
             }
             config["Analyser"] = {
                 "method": "DOA",
-                "ref_audio": "./plays/ref.wav",
-                "target_audio": "./records/"
+                "ref_audio": f"{current_dir}/plays/ref.wav",
+                "target_audio": f"{current_dir}/records/"
             }
             with open(self.config_file, 'w') as configfile:
                 config.write(configfile)
@@ -150,7 +159,7 @@ class RemoteHostApp:
         value = widget.get()
         self.set_config(section, option, value)
         # print(f"[INFO]: {section}.{option} changed to {value}")
-
+    
     def on_widget_change_update(self, widget, is_local=True, file_type="all", *args):
         """
         Callback function to handle changes in widget values.
@@ -256,11 +265,11 @@ class RemoteHostApp:
         self.status_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew", padx=5)
 
         # System Reset button
-        reset_button = tk.Button(ssh_frame, text=self.get_text("System Reset"), command=self.system_reset)
+        reset_button = tk.Button(ssh_frame, text=self.get_text("Reset"), command=self.system_reset)
         reset_button.grid(row=5, column=0, sticky="ew", padx=5, pady=10)
 
         # UI Refresh button
-        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("UI Fresh"), command=self.refresh_ui)
+        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("Reboot"), command=self.restart_app)
         ui_fresh_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
 
         # Sync file button
@@ -305,7 +314,7 @@ class RemoteHostApp:
         # Save path entry
         self.save_path_entry = tk.Entry(log_ctl_frame)
         self.save_path_entry.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
-        self.save_path_entry.insert(0, "/tmp/log.txt")
+        self.save_path_entry.insert(0, f"{self.cache_path}logs.txt")
 
     def clear_logs(self):
         # Clear the content in the Text widget
@@ -376,14 +385,12 @@ class RemoteHostApp:
         upload_frame.grid_columnconfigure(1, weight=1)
 
         # Upload button
-        upload_button = tk.Button(
-            upload_frame, text=self.get_text("Upload File"), command=self.upload_file
-        )
-        upload_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        upload_button = tk.Button(upload_frame, text=self.get_text("Upload File"), command=self.upload_file)
+        upload_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
         # Upload source path label and entry
-        update_src_label = tk.Label(upload_frame, text=self.get_text("Local Path:"))
-        update_src_label.grid(row=1, column=0, pady=5, sticky="e")
+        update_src_label = tk.Label(upload_frame, text=self.get_text("Local     Path:"))
+        update_src_label.grid(row=1, column=0, pady=5, sticky="w")
         self.upload_src_var = tk.StringVar(value=self.local_root_path)  # Default source path
         self.upload_src_var.trace_add("write", partial(self.on_widget_change_save, self.upload_src_var,
                                                        "File", "local_root_path"))
@@ -394,7 +401,7 @@ class RemoteHostApp:
 
         # Upload destination path label and entry
         update_dest_label = tk.Label(upload_frame, text=self.get_text("Remote Path:"))
-        update_dest_label.grid(row=2, column=0, pady=5, sticky="e")
+        update_dest_label.grid(row=2, column=0, pady=5, sticky="w")
         self.upload_dest_var = tk.StringVar(value=self.remote_root_path)  # Default destination path
         self.upload_dest_var.trace_add("write", partial(self.on_widget_change_save, self.upload_dest_var,
                                                          "File", "remote_root_path"))
@@ -405,9 +412,7 @@ class RemoteHostApp:
         self.upload_combobox_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
         # Download Frame setup
-        download_frame = tk.LabelFrame(
-            self.page_flies, text="Download File", padx=10, pady=10
-        )
+        download_frame = tk.LabelFrame(self.page_flies, text="Download File", padx=10, pady=10)
         download_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
         # Configure grid inside download_frame
@@ -424,7 +429,7 @@ class RemoteHostApp:
 
         # Download source path label and entry
         download_src_label = tk.Label(download_frame, text=self.get_text("Remote Path:"))
-        download_src_label.grid(row=1, column=0, pady=5, sticky="e")
+        download_src_label.grid(row=1, column=0, pady=5, sticky="w")
         self.download_var = tk.StringVar(value=self.remote_root_path)  # Default destination path
         self.download_var.trace_add("write", partial(self.on_widget_change_save, self.download_var,
                                                      "File", "remote_root_path"))
@@ -435,8 +440,8 @@ class RemoteHostApp:
         self.download_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Download destination path label and entry
-        download_dest_label = tk.Label(download_frame, text=self.get_text("Local Path:"))
-        download_dest_label.grid(row=2, column=0, pady=5, sticky="e")
+        download_dest_label = tk.Label(download_frame, text=self.get_text("Local     Path:"))
+        download_dest_label.grid(row=2, column=0, pady=5, sticky="w")
         self.download_dest_var = tk.StringVar(value=self.local_root_path)  # Default destination path
         self.download_dest_var.trace_add("write", partial(self.on_widget_change_save, self.download_dest_var,
                                                            "File", "local_root_path"))
@@ -577,7 +582,7 @@ class RemoteHostApp:
         self.rec_dur_label = tk.Label(self.record_frame, text="Duration(s):")
         self.rec_dur_label.grid(row=0, column=4, padx=5, pady=5, sticky="e")
 
-        self.rec_dur_var = tk.StringVar(value="10")
+        self.rec_dur_var = tk.StringVar(value=self.rec_dur)
         self.rec_dur_var.trace_add("write", partial(self.on_widget_change_save, self.rec_dur_var, "Audio", "rec_dur"))
         self.rec_dur_entry = tk.Entry(self.record_frame, textvariable=self.rec_dur_var)
         self.rec_dur_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
@@ -596,7 +601,7 @@ class RemoteHostApp:
                                                      "Audio", "rec_path"))
         self.rec_path_combobox = ttk.Combobox(self.record_frame, textvariable=self.rec_path_var)
         self.rec_path_var.trace_add("write", partial(self.on_widget_change_update, self.rec_path_combobox, True, ".wav"))
-        self.rec_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+        self.rec_path_combobox.grid(row=2, column=1, columnspan=5, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Player
 
@@ -654,7 +659,7 @@ class RemoteHostApp:
                                                              "Audio", "play_path"))
         self.play_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.play_path_var)
         self.play_path_var.trace_add("write", partial(self.on_widget_change_update, self.play_path_combobox, True, ".wav"))
-        self.play_path_combobox.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="nsew")
+        self.play_path_combobox.grid(row=2, column=1, columnspan=5, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Analyzer        
         # Configure analysis_frame grid layout
@@ -675,7 +680,7 @@ class RemoteHostApp:
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         self.analysis_progress = ttk.Progressbar(self.analysis_frame, orient="horizontal", length=400, mode="determinate")
-        self.analysis_progress.grid(row=1, column=0, columnspan=4, padx=5, pady=(0, 10), sticky="nsew")
+        self.analysis_progress.grid(row=1, column=0, columnspan=5, padx=5, pady=(0, 10), sticky="nsew")
         self.analysis_progress_running = False
 
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
@@ -686,7 +691,7 @@ class RemoteHostApp:
                                                      "Analyser", "ref_audio"))
         self.ref_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.ref_audio_var)
         self.ref_audio_var.trace_add("write", partial(self.on_widget_change_update, self.ref_audio_combobox, True, ".wav"))
-        self.ref_audio_combobox.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        self.ref_audio_combobox.grid(row=2, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
 
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
@@ -696,11 +701,11 @@ class RemoteHostApp:
                                                      "Analyser", "target_audio"))
         self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_var)
         self.target_audio_var.trace_add("write", partial(self.on_widget_change_update, self.target_audio_combobox, True, ".wav"))
-        self.target_audio_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        self.target_audio_combobox.grid(row=3, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
         self.analysis_button = tk.Button(self.analysis_frame, text="Run Analysis", command=self.toggle_analysis)
-        self.analysis_button.grid(row=4, column=0, columnspan=2, pady=10)
+        self.analysis_button.grid(row=4, column=0, columnspan=5, pady=10)
 
     def setup_page_videos(self):
         # Clear all widgets on page_videos
@@ -843,6 +848,10 @@ class RemoteHostApp:
                     f"Window size has been adjusted to maintain aspect ratio: {constrainted_width}x{constrained_height},"
                     "minimum width is {self.min_width}, maximun width is {self.max_width}"))
             # Update window size and font size
+            self.height_entry.delete(0, tk.END)
+            self.height_entry.insert(0, str(constrained_height))
+            self.width_entry.delete(0, tk.END)
+            self.width_entry.insert(0, str(constrainted_width))
             self.root.geometry(f"{constrainted_width}x{constrained_height}")
             self.default_font_size = new_font_size
 
@@ -948,7 +957,6 @@ class RemoteHostApp:
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
             # Reset remote sever
-            self.system_reset(flag='mute')
             self.system_setup()
             self.sync_files(force=True, mode="merge")
             # Update the device and folder menus
@@ -1112,9 +1120,27 @@ class RemoteHostApp:
         # Start recording progress
         print("[INFO]: Starting audio recording...") 
         record_path = self.rec_path_combobox.get()
+        ret = self.audio_module.record_audio(record_path)
+        # download the recorded file to local
+        if ret is True:
+            print(f"[INFO]: Downloading recorded audio file to local dir: {record_path}")
+            remote_rec_path = self.audio_module.remote_rec_dir + os.path.basename(record_path)
+            try:
+                self.ssh_client.download_file(remote_rec_path, record_path)
+                print(f"[INFO]: Recorded audio file downloaded to {record_path}") 
+            except Exception as e:
+                messagebox.showerror(self.get_text("Error"),
+                                     f"{self.get_text('Download failed')}: {str(e)}")
+                print("[ERR]: Download failed: ") + str(e) 
+        return ret
+
+    def audio_recorder_thread(self):
+        total_sec = int(self.rec_dur_var.get() or 10)
+        record_path = self.rec_path_combobox.get()
         if self.ssh_client.is_dir(record_path):
-            # messagebox.showerror(self.get_text("Error"), self.get_text("Recording path is a directory, please specify a file path"))
             print("[INFO]: Recording path is a directory, please specify a file path") 
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Recording path is a directory, please specify a file path"))
             return False
         # Check if the recording path already exists
         if os.path.exists(record_path):
@@ -1124,23 +1150,6 @@ class RemoteHostApp:
             if not result:
                 print("[INFO]: Recording cancelled by user") 
                 return False
-        ret = self.audio_module.record_audio(record_path)
-        # download the recorded file to local
-        if ret is True:
-            print(f"[INFO]: Downloading recorded audio file to local dir: {self.rec_path}")
-            remote_rec_path = self.audio_module.audio_dir_record + os.path.basename(record_path)
-            try:
-                self.ssh_client.download_file(remote_rec_path, self.rec_path)
-                print(f"[INFO]: Recorded audio file downloaded to {self.rec_path}") 
-            except Exception as e:
-                messagebox.showerror(self.get_text("Error"),
-                                     f"{self.get_text('Download failed')}: {str(e)}")
-                print("[ERR]: Download failed: ") + str(e) 
-        return ret
-
-    def audio_recorder_thread(self):
-        total_sec = int(self.rec_dur.get() or 10)
-
         # Record audio in a separate thread to avoid blocking the UI
         def do_record():
             # Start the progress bar
@@ -1167,11 +1176,11 @@ class RemoteHostApp:
             def on_finish():
                 if ret:
                     print("[INFO]: Recording completed successfully") 
-                    messagebox.showinfo(self.get_text("Success"), self.get_text("Recording completed successfully"))
-                    self.record_button.config(text=self.get_text("Start Recording"))
+                    messagebox.showinfo(self.get_text("Success"), self.get_text(f"Recording {record_path} completed successfully"))
                 else:
                     print("[ERR]: Recording failed") 
                     messagebox.showerror(self.get_text("Error"), self.get_text("Recording failed"))
+                self.record_button.config(text=self.get_text("Start Recording"))
             self.record_progress.after(0, on_finish)
 
         threading.Thread(target=do_record).start() 
@@ -1203,7 +1212,8 @@ class RemoteHostApp:
         return ret
         
     def audio_player_thread(self):
-        wav_info = self.audio_module.get_wav_info(self.play_path_combobox.get())
+        play_audio_path = self.play_path_combobox.get()
+        wav_info = self.audio_module.get_wav_info(play_audio_path)
         if wav_info is None:
             messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or file type error"))
             return
@@ -1223,8 +1233,8 @@ class RemoteHostApp:
         sample_rate = self.audio_module.rate = int(wav_info['sample_rate'])
         channels = self.audio_module.channels = int(wav_info['channels'])
         sample_fmt = self.audio_module.audio_format = wav_info['sample_fmt']
-        self.file_type.set('wav')  # Set file type from WAV info
-        print(f"[INFO]: Audio file: {self.play_path_combobox.get()}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
+        self.file_type = 'wav'  # Set file type from WAV info
+        print(f"[INFO]: Audio file: {play_audio_path}, Sample Rate: {sample_rate}, Channels: {channels}, Sample Format: {sample_fmt}", 
               f"Duration: {total_sec} sec")
         self.play_progress_running = True
         device = self.play_device_var.get()
@@ -1269,7 +1279,7 @@ class RemoteHostApp:
             def on_finish():
                 if ret:
                     print("[INFO]: Playback completed successfully") 
-                    messagebox.showinfo(self.get_text("Success"), self.get_text("Playback completed successfully"))
+                    messagebox.showinfo(self.get_text("Success"), self.get_text(f"Playback {play_audio_path} completed successfully"))
                 else:
                     print("[ERR]: Playback failed") 
                     messagebox.showerror(self.get_text("Error"), self.get_text("Playback failed"))
@@ -1367,7 +1377,7 @@ class RemoteHostApp:
             print("[INFO]: Analysis already running, stopping...")
             self.analysis_progress_running = False
             self.analysis_progress.stop()
-            self.system_reset('mute') 
+            self.ssh_client.remote_reset()
             self.analysis_button.config(text=self.get_text("Run Analysis"))
         else:
             print("[INFO]: Starting audio analysis...")
@@ -1416,10 +1426,11 @@ class RemoteHostApp:
                 self.analysis_progress.stop()
                 if result is True:
                     print("[INFO]: Audio analysis completed successfully") 
-                    messagebox.showinfo(self.get_text("Success"), f"{self.get_text('Audio analysis completed successfully')}: {result}")
+                    messagebox.showinfo(self.get_text("Success"), self.get_text(f"Audio analysis {self.analysis_method} completed successfully"))
                 else:
                     print("[ERR]: Audio analysis failed") 
-                    messagebox.showerror(self.get_text("Error"), self.get_text("Audio analysis failed"))
+                    messagebox.showerror(self.get_text("Error"), self.get_text(f"Audio analysis {self.analysis_method} failed"))
+                self.analysis_button.config(text=self.get_text("Run Analysis"))
             self.analysis_progress.after(0, on_finish)
             
         # Run the analysis task in a separate thread to avoid blocking the UI
@@ -1443,18 +1454,25 @@ class RemoteHostApp:
         messagebox.showinfo(self.get_text("Success"),
                             self.get_text("UI refreshed successfully"))
 
-    def system_reset(self, flag="normal"):
+    def system_reset(self):
         """
-        Reset the remote host.
+        Reset the system.
         """
+        ret = messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the system? This will restore factory settings and delete all private data.") 
+        if not ret:
+            print("[INFO]: System reset cancelled by user") 
+            return
+        # Reset the remote host
         if self.ssh_client:
-            self.ssh_client.reset()
-            if 'mute' not in flag:
-              messagebox.showinfo(self.get_text("Success"),
-                                  self.get_text("Remote host reset successfully"))
-        else:
-            messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Not connected to remote host"))
+            self.ssh_client.remote_reset()
+        # Reset the local system
+        command = (f"rm -rf {self.cache_path} && "
+                f"rm ui_config.ini && "
+                f"mkdir -p {self.cache_path} && "
+                f"mkdir -p {self.def_play_path} && " 
+                f"mkdir -p {self.def_rec_path} ")
+        subprocess.run(command, shell=True, check=True)
+        self.restart_app()
     
     def system_setup(self):
         """
@@ -1466,9 +1484,12 @@ class RemoteHostApp:
             return False
         try:
             # remote system setup
+            self.ssh_client.remote_reset()
             self.ssh_client.setup(self.ssh_client)
             #local system setup
-            command = f"mkdir -p ./tmp/"
+            command = (f"mkdir -p {self.cache_path} && " 
+                       f"mkdir -p ./records/ && " 
+                       f"mkdir -p ./plays/ ")
             subprocess.run(command, shell=True, check=True)
             print("[init]: Remote/Local system is initialized")
             return True
@@ -1493,6 +1514,7 @@ class RemoteHostApp:
             mode = self.sync_mode_combobox.get()
         # Sync local files to remote
         if mode == "local":
+            print("[INFO]: Syncing local files to remote...")
             sync_play = f"sshpass -p {self.password} rsync -avz --delete ./plays/ {self.username}@{self.hostname}:/root/plays/"
             sync_record = f"sshpass -p {self.password} rsync -avz --delete ./records/ {self.username}@{self.hostname}:/root/records/"
             result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite and delete remote files.")
@@ -1500,6 +1522,7 @@ class RemoteHostApp:
                 print("[INFO]: Sync operation cancelled by user")
                 return False
         elif mode == "remote":
+            print("[INFO]: Syncing remote files to local...")
             sync_play = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/plays/ ./plays/"
             sync_record = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/records/ ./records/"
             result = messagebox.askyesno("Confirm", "Do you want to sync remote files to local? This might overwrite and delete local files.")
@@ -1507,6 +1530,7 @@ class RemoteHostApp:
                 print("[INFO]: Sync operation cancelled by user")
                 return False
         else: #merge
+            print("[sync]: Merging local and remote files...")
             sync_play = f"sshpass -p {self.password} rsync -avz ./plays/ {self.username}@{self.hostname}:/root/plays/"
             sync_record = f"sshpass -p {self.password} rsync -avz ./records/ {self.username}@{self.hostname}:/root/records/"
             subprocess.run(sync_play, shell=True, check=True)

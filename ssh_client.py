@@ -56,7 +56,7 @@ class SSHClient:
 
         return not self.is_connected()
 
-    def execute_command(self, command, force=False):
+    def execute_command(self, command, force=False, verbose=False):
         """
         Execute a remote command and return the output as a string.
         """
@@ -65,6 +65,12 @@ class SSHClient:
             # Get the output and error (if any)
             output = stdout.read().decode("utf-8").strip()
             error = stderr.read().decode("utf-8").strip()
+            if verbose:
+                print(f"[CMD]: {command}")
+                if output:
+                    print(f"[OUT]: {output}")
+                if error:
+                    print(f"[ERR]: {error}")
             if force:
                 return output
             if error != "":
@@ -192,7 +198,7 @@ class SSHClient:
         print("[init]: Remote work directories are created")
         return True
     
-    def reset(self):
+    def remote_reset(self):
         """
         Reset the remote system by stopping all audio-related processes and clearing directories.
         """

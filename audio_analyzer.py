@@ -79,19 +79,26 @@ class AudioAnalyzer:
         """
         if not self.ssh_client.is_connected():
             print("[ERR]: SSH client is not connected.")
-            return False, None
+            return False
         src_base_name = os.path.basename(src_audio)
-        remote_audio_path = self.audio_module.get_remote_file_path(src_audio)
+        # Check if the SSL file already exists locally
+        local_ssl_file_name = f"./records/ssl_{src_base_name}"
+        if os.path.exists(local_ssl_file_name):
+            print(f"[INFO]: SSL file {local_ssl_file_name} already exists. Skipping analysis.")
+            return self.doa_file_analyzing(local_ssl_file_name)
+        
+        # Not exists, proceed on remote server
+        remote_audio_path = self.audio_module.check_and_sync_file(src_audio)
         if remote_audio_path is None:
             print(f"[ERR]: Audio file {src_base_name} does not exist on the remote server.")
-            return False, None
-
+            return False
+        
         try:
             remote_config_file_path = "/etc/vibe/dsp/cras_audio_bot.cfg"
             remote_config_file_test_path = "/tmp/cras_audio_bot_test.cfg"
             if not self.ssh_client.file_exists(remote_config_file_path):
                 print(f"[ERR]: Configuration file {remote_config_file_path} does not exist on the remote server.")
-                return False, None
+                return False
             if not self.ssh_client.file_exists(remote_config_file_test_path):
                 # Download the configuration file from the remote server
                 config_file_path = "/tmp/cras_audio_bot.cfg"
@@ -118,20 +125,20 @@ class AudioAnalyzer:
             output = self.ssh_client.execute_command(command, force=True)
             if output is None or "Error" in output:
                 print(f"[ERR]: cras_api_file_test command failed for {remote_audio_path}. Output: {output}")
-                return False, None
+                return False
             # Download the ssl test file to local
             remote_ssl_file_path = self.ssh_client.execute_command(f"ls /tmp/*ssl_.wav | head -n 1") 
             if not remote_ssl_file_path:
                 print(f"[ERR]: No SSL file found in /tmp after cras_api_file_test.")
-                return False, None
-            local_ssl_file_name = f"./records/ssl_{src_base_name}"
+                return False
+            
             self.ssh_client.download_file(remote_ssl_file_path, local_ssl_file_name)
             print(f"[INFO]: DOA analysis Stage1 completed. SSL file saved at {local_ssl_file_name}.")
             return self.doa_file_analyzing(local_ssl_file_name)
             
         except Exception as e:
             print(f"[ERR]: Failed to analyze audio file {src_audio}: {e}")
-            return False, None
+            return False
         
     def doa_file_analyzing(self, ssl_file):
         if not os.path.exists(ssl_file):
@@ -141,12 +148,14 @@ class AudioAnalyzer:
         try:
             # Step 1: extract the 7th channel from the SSL file
             ssl_base_name = os.path.basename(ssl_file)
-            ssl_channel_file = f"./records/chn_{ssl_base_name}"
-            command = f"ffmpeg -y -i {ssl_file} -map_channel 0.0.8 -c:a pcm_s16le -ar 16000 {ssl_channel_file}"
-            result = sp.run(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
-            if result.returncode != 0:
-                print(f"[ERR]: Failed to extract channel: {result.stderr.decode()}")
-                return False
+            ssl_channel_file = f"./cache/chn_{ssl_base_name}"
+            # Check if the channel file already exists in cache
+            if not os.path.exists(ssl_channel_file):
+                command = f"ffmpeg -y -i {ssl_file} -map_channel 0.0.8 -c:a pcm_s16le -ar 16000 {ssl_channel_file}"
+                result = sp.run(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
+                if result.returncode != 0:
+                    print(f"[ERR]: Failed to extract channel: {result.stderr.decode()}")
+                    return False
 
             # Step 2: read the extracted channel audio file and recover the angle
             audio_np, sample_rate = sf.read(ssl_channel_file, dtype='float32')

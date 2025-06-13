@@ -1,6 +1,6 @@
 
 /*config.ini
-orignal/
 tmp/
-/tmp*
+cache/
 __pycache__/
+records/

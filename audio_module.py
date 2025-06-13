@@ -7,8 +7,10 @@ import subprocess as sp
 class AudioModule:
     def __init__(self, ssh_client: SSHClient):
         self.ssh_client = ssh_client
-        self.audio_dir_play = "/root/plays/"
-        self.audio_dir_record = "/root/records/"
+        self.remote_play_dir = "/root/plays/"
+        self.remote_rec_dir = "/root/records/"
+        self.local_play_dir = "./plays/"
+        self.local_rec_dir = "./records/"
         self.rate = 48000
         self.channels = 2
         self.audio_format = "int16"
@@ -34,76 +36,96 @@ class AudioModule:
         print(
             f"Audio settings updated: rate={self.rate}, channels={self.channels}, format={self.audio_format}, dur_sec={self.rec_dur_sec}, type={self.file_type}, engine={self.engine}, device={self.device}")
 
-    def get_remote_file_path(self, audio_file: str) -> bool:
+    def check_and_sync_file(self, audio_file: str) -> bool:
         """
         Check if the audio file exists on the remote server and upload it if necessary.
         """
         # check if ssh client is connected
         if self.ssh_client is None:
             print("[ERR]: SSH client is not connected.")
-            return None
+            return None, None
+        local_file_path = audio_file
         local_exists = os.path.exists(audio_file)
-        audio_file_name = os.path.basename(audio_file)
-        remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
-        remote_exists = self.ssh_client.file_exists(remote_audio_file)
+        file_name = os.path.basename(audio_file)
+        # check if the file exists on the remote server: play/record directory
+        remote_file_path_play = os.path.join(self.remote_play_dir, file_name)
+        remote_exists_play = self.ssh_client.file_exists(remote_file_path_play)
+        remote_file_path_rec = os.path.join(self.remote_rec_dir, file_name)
+        remote_exists_rec = self.ssh_client.file_exists(remote_file_path_rec)
+        remote_exists = remote_exists_play or remote_exists_rec
 
-        if not local_exists and not remote_exists:
-            print(f"[ERR]: Audio file {audio_file} does not exist either locally or on the remote server.")
-            return None
+        if not local_exists:
+            if not remote_exists:
+                print(f"[ERR]: Audio file {audio_file} does not exist either locally or on the remote server.")
+                return None, None
+            else:
+                if remote_exists_play:
+                    remote_file_path = remote_file_path_play
+                    local_file_path = os.path.join(self.local_play_dir, file_name)
+                else:
+                    remote_file_path = remote_file_path_rec
+                    local_file_path = os.path.join(self.local_rec_dir, file_name)
+                self.ssh_client.download_file(remote_file_path, local_file_path)
+        else:
+            if not remote_exists:
+                self.ssh_client.upload_file(audio_file, self.remote_play_dir)
+                remote_file_path = remote_file_path_play
+            else:
+                if remote_exists_play:
+                    remote_file_path = remote_file_path_play
+                else:
+                    remote_file_path = remote_file_path_rec
 
-        # upload audio file to remote server if it does not exist        
-        if not remote_exists and local_exists:
-            self.ssh_client.upload_file(audio_file, self.audio_dir_play)
-
-        return remote_audio_file 
+        return remote_file_path, local_file_path
        
     def get_wav_info(self, audio_file: str) -> dict:
         """
         Get the information of a WAV audio file.
         """
-        # Try local file first
-        if os.path.exists(audio_file):
-            try:
-                with wave.open(audio_file, 'rb') as wav_file:
-                    sample_rate = wav_file.getframerate()
-                    num_frames = wav_file.getnframes()
-                    duration = num_frames / sample_rate
-                    info = {
-                        'channels': wav_file.getnchannels(),
-                        'sample_rate': sample_rate,
-                        'num_frames': num_frames,
-                        'duration': duration,
-                    }
-                return info
-            except Exception as e:
-                print(f"[ERR]: Failed to read local WAV file {audio_file}: {e}")
+        local_audio_file = audio_file
+        if not os.path.exists(audio_file):
+            if self.ssh_client is None:
+                print("[ERR]: SSH client is not connected.")
                 return None
-        # check if ssh client is connected
-        if self.ssh_client is None:
-            print("[ERR]: SSH client is not connected.")
-            return None
-        
-        remote_audio_file = self.get_remote_file_path(audio_file)
-        if remote_audio_file is None:
-            print(f"[ERR]: Audio file {audio_file} does not exist on the remote server.")
-            return None
-        
-        # get audio file information
-        command = f"ffprobe -v error -show_format -show_streams {remote_audio_file}"
-        output = self.ssh_client.execute_command(command)
-        if output:
-            info = {}
-            for line in output.splitlines():
-                if '=' not in line:
-                    continue
-                if ':' in line:
-                    continue
-                key, value = line.split('=')
-                info[key] = value
+            remote_audio_file, local_audio_file = self.check_and_sync_file(audio_file)
+            if remote_audio_file is None or local_audio_file is None:
+                print(f"[ERR]: Audio file {audio_file} does not exist on the remote server.")
+                return None
+       
+        try:
+            with wave.open(local_audio_file, 'rb') as wav_file:
+                sample_rate = wav_file.getframerate()
+                num_frames = wav_file.getnframes()
+                duration = num_frames / sample_rate
+                sample_fmt = "S16_LE" if wav_file.getsampwidth() == 2 else "S32_LE" if wav_file.getsampwidth() == 4 else "UNKNOWN"
+                info = {
+                    'channels': wav_file.getnchannels(),
+                    'sample_rate': sample_rate,
+                    'num_frames': num_frames,
+                    'duration': duration,
+                    'sample_fmt': sample_fmt
+                }
             return info
-        else:
-            print("[ERR]: Failed to retrieve audio file information.")
+        except Exception as e:
+            print(f"[ERR]: Failed to read local WAV file {local_audio_file}: {e}")
             return None
+        
+        # # get audio file information
+        # command = f"ffprobe -v error -show_format -show_streams {remote_audio_file}"
+        # output = self.ssh_client.execute_command(command)
+        # if output:
+        #     info = {}
+        #     for line in output.splitlines():
+        #         if '=' not in line:
+        #             continue
+        #         if ':' in line:
+        #             continue
+        #         key, value = line.split('=')
+        #         info[key] = value
+        #     return info
+        # else:
+        #     print("[ERR]: Failed to retrieve audio file information.")
+        #     return None
     
     def check_avaliable_paras(self, dev_type) -> bool:
         """
@@ -166,8 +188,8 @@ class AudioModule:
             print("[ERR]: SSH client is not connected.")
             return False
         # check if the audio file exists on the remote server
-        remote_audio_file = self.get_remote_file_path(audio_file)
-        if remote_audio_file is None:
+        remote_audio_file, local_audio_file = self.check_and_sync_file(audio_file)
+        if remote_audio_file is None or local_audio_file is None:
             print(f"[ERR]: Audio file {audio_file} does not exist on the remote server.")
             return False
         # check if the audio file is a valid audio file
@@ -187,7 +209,13 @@ class AudioModule:
             if cras_node is None:
                 print(f"[ERR]: CRAS node for device {self.device} not found.")
                 return False
-            command = f"cras_test_client --select_output {cras_node} --playback_file {remote_audio_file} --rate {self.rate} --num_channels {self.channels} --duration_seconds {self.play_dur_sec}"
+            command = (f"cras_test_client --select_output {cras_node} " 
+                       f"--format {self.audio_format} "
+                       f"--rate {self.rate} "
+                       f"--num_channels {self.channels} "
+                       f"--duration_seconds {self.play_dur_sec} "
+                       f"--playback_file {remote_audio_file} "
+            )
         else:
             print(f"[ERR]: Unsupported engine: {self.engine}")
             return False
@@ -284,11 +312,10 @@ class AudioModule:
             print("[ERR]: SSH client is not connected.")
             return False    
         # check if the output file exists on the remote server
-        remote_output_file = os.path.join(self.audio_dir_record, os.path.basename(output_file))
+        remote_output_file = os.path.join(self.remote_rec_dir, os.path.basename(output_file))
         # check if the output file already exists
         if self.ssh_client.file_exists(remote_output_file):
-            print(f"[WARN]: Output file {remote_output_file} already exists.")
-            return False
+            print(f"[WARN]: REMOTE record file {remote_output_file} already exists, you are overwriting it.")
         
         if self.engine == "alsa":
             if not self.check_avaliable_paras('mic'):
@@ -299,7 +326,19 @@ class AudioModule:
             if cras_node is None:
                 print(f"[ERR]: CRAS node for device {self.device} not found.")
                 return False
-            command = f"cras_test_client --select_input {cras_node} --duration_seconds {self.rec_dur_sec} --record_file {remote_output_file}"
+            tmp_pcm_file = os.path.join("/tmp/", "tmp_record.pcm")
+            convert_cmd = (f"sox -t raw -r {self.rate} -e signed -b 16 -c {self.channels} "
+                              f"{tmp_pcm_file} {remote_output_file} && "
+                              f"rm {tmp_pcm_file}"
+            )
+            command = (f"cras_test_client --select_input {cras_node} "
+                       f"--format {self.audio_format} "
+                       f"--duration_seconds {self.rec_dur_sec} " 
+                       f"--rate {self.rate} " 
+                       f"--num_channels {self.channels} "
+                       f"--capture_file {tmp_pcm_file} && "
+                       f"{convert_cmd} "
+            )
         else:
             print(f"[ERR]: Unsupported engine: {self.engine}")
             return False
@@ -309,6 +348,10 @@ class AudioModule:
             self.ssh_client.execute_command("stop vibe-dsp-server") 
             output = self.ssh_client.execute_command(command)
             self.ssh_client.execute_command("start vibe-dsp-server")
+        elif self.device == "hw:Loopback,0":
+            self.ssh_client.execute_command("vibe-dsp-client -c start") 
+            output = self.ssh_client.execute_command(command)
+            self.ssh_client.execute_command("vibe-dsp-client -c stop")
         else:
             output = self.ssh_client.execute_command(command)
 
@@ -340,9 +383,9 @@ class AudioModule:
             return False
         # check if the audio file exists on the remote server
         audio_file_name = os.path.basename(audio_file)
-        remote_audio_file = os.path.join(self.audio_dir_play, audio_file_name)
+        remote_audio_file = os.path.join(self.remote_play_dir, audio_file_name)
         if not self.ssh_client.file_exists(remote_audio_file):
-            self.ssh_client.upload_file(audio_file, self.audio_dir_play)
+            self.ssh_client.upload_file(audio_file, self.remote_play_dir)
         # check if the audio file is a valid audio file
         command = f"ffmpeg -i {remote_audio_file}"
         output = self.ssh_client.execute_command(command)
