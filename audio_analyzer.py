@@ -33,15 +33,13 @@ class AudioAnalyzer:
             return False
         # analyze audio file
         if method == "PESQ":
-            if not os.path.exists(ref_audio):
-                print(f"[ERR]: Refe Audio file {ref_audio} does not exist.")
-                return False
             print(f"[INFO]: Analyzing audio file {target_audio} with PESQ against reference {ref_audio}.")
             return self.pesq_analyzing(ref_audio, target_audio)   
         elif method == "Reverb":
             pass
         elif method == "SNR":
-            pass
+            print(f"[INFO]: Analyzing audio file {target_audio} with SNR against reference {ref_audio}.")
+            return self.snr_analyzing(ref_audio, target_audio)
         elif method == "DOA":
             info = self.audio_module.get_wav_info(target_audio)
             if info is None:
@@ -69,9 +67,11 @@ class AudioAnalyzer:
                 return False
             return True
         elif method == "ANR":
-            pass
+            print(f"[INFO]: ANR analysis is not implemented yet.")
+            return False
         elif method == "AEC":
-            pass
+            print(f"[INFO]: AEC analysis is not implemented yet.")
+            return False
         elif method == "Spectrum":
             pass
         else:
@@ -258,4 +258,19 @@ class AudioAnalyzer:
             return True
         except Exception as e:
             print(f"[ERR]: Failed to analyze audio file with PESQ: {e}")
+            return False
+        
+    def snr_analyzing(self, ref_audio, target_audio):
+        """
+        Analyze the audio file using SNR.
+        """
+        if not os.path.exists(ref_audio) or not os.path.exists(target_audio):
+            print(f"[ERR]: Reference or target audio file does not exist.")
+            return False
+        
+        try:
+            self.pesq_analyzer.snr_calc(ref_audio, target_audio)
+            return True
+        except Exception as e:
+            print(f"[ERR]: Failed to analyze audio file with SNR: {e}")
             return False

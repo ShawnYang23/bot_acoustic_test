@@ -679,7 +679,7 @@ class RemoteHostApp:
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESQ", "Reverb", "ANR", "AEC", "Spectrogram", "DOA"]
+        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrogram", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
@@ -1394,7 +1394,7 @@ class RemoteHostApp:
     def audio_analyzer_thread(self):
         def task():
             start_time = time.time()
-            method = self.analysis_method_combobox.get()
+            self.analysis_method = self.analysis_method_combobox.get()
             ref_audio = self.ref_audio_combobox.get()
             target_audio = self.target_audio_combobox.get()
             if not os.path.exists(target_audio):
@@ -1408,7 +1408,7 @@ class RemoteHostApp:
                     messagebox.showerror(self.get_text("Error"), self.get_text("Audio module not initialized or failed to get WAV info"))
                     return
                 total_sec = int(wav_info['duration']) + 1  # Add 1 second buffer to avoid rounding issues
-            print(f"[INFO]: Starting audio analysis with method: {method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
+            print(f"[INFO]: Starting audio analysis with method: {self.analysis_method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
             
             def update_analyse_progress():
                 if not self.analysis_progress_running:
@@ -1426,7 +1426,7 @@ class RemoteHostApp:
             self.analysis_start_time = time.time()
             self.analysis_progress.after(0, update_analyse_progress)
             # Perform the audio analysis
-            result = self.audio_analyzer.audio_analyzing(method=method, ref_audio=ref_audio, target_audio=target_audio)
+            result = self.audio_analyzer.audio_analyzing(method=self.analysis_method, ref_audio=ref_audio, target_audio=target_audio)
 
             def on_finish():
                 self.analysis_progress_running = False
