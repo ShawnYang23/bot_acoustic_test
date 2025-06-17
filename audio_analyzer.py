@@ -12,12 +12,17 @@ from pesq_score import PesqScore
 class AudioAnalyzer:
     def __init__(self, audio_module):
         self.audio_module = audio_module
-        self.ssh_client = audio_module.ssh_client
-        self.pesq_analyzer = PesqScore()
-        if not self.ssh_client.is_connected():
-            raise Exception("[ERR]: SSH client is not connected. Cannot initialize AudioAnalyzer.")
-        
+        self.ssh_client = None
+        self.pesq_analyzer = PesqScore()  
         self.default_analyze_sec = 10 # Default analyze duration in seconds
+
+    def set_ssh_connect(self, ssh_client: SSHClient):
+        """
+        Set the SSH client for remote operations.
+        """
+        if not ssh_client.is_connected():
+            print("[ERR]: SSH client is not connected.")
+        self.ssh_client = ssh_client
     
     def audio_analyzing(self, ref_audio:str , target_audio: str, method: str = "PESQ"):
         """

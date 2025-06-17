@@ -6,7 +6,7 @@ import subprocess as sp
 
 class AudioModule:
     def __init__(self, ssh_client: SSHClient):
-        self.ssh_client = ssh_client
+        self.ssh_client = None
         self.remote_play_dir = "/root/plays/"
         self.remote_rec_dir = "/root/records/"
         self.local_play_dir = "./plays/"
@@ -21,6 +21,15 @@ class AudioModule:
         self.device = "speaker"
         self.is_recording = False
         self.is_playing = False
+
+    def set_ssh_connect(self, ssh_client: SSHClient):
+        """
+        Connect to the remote host using SSH.
+        """
+        if not ssh_client.is_connected():
+            print("[ERR]: ssh client is not connected.")
+        self.ssh_client = ssh_client
+        return True
 
     def paras_settings(self, rate: int = 44100, channels: int = 2, audio_format: str = "S16_LE", rec_sec: int = 10, file_type: str = "wav", engine: str = "alsa", device: str = "speaker"):
         """

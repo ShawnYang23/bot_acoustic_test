@@ -948,6 +948,13 @@ class RemoteHostApp:
         self.username = self.username_entry.get()
         self.password = self.password_entry.get()
 
+        # Initialize audio module and analyzer
+        self.audio_module = AudioModule(self.ssh_client)
+        self.audio_analyzer = AudioAnalyzer(self.audio_module)
+        # Setup local sys
+        self.system_setup_local()
+        self.update_local_menu()
+
         try:
             self.ssh_client = SSHClient(
                 self.hostname, self.username, self.password)
@@ -957,14 +964,12 @@ class RemoteHostApp:
             self.status_label.config(text=self.get_text(
                 "Status: Connected"), fg="green")
             # Reset remote sever
-            self.system_setup()
+            self.system_setup_remote()
             self.sync_files(force=True, mode="merge")
-            # Update the device and folder menus
-            self.update_device_menu()
-            self.update_folder_menu()
-            # Initialize audio module and analyzer
-            self.audio_module = AudioModule(self.ssh_client)
-            self.audio_analyzer = AudioAnalyzer(self.audio_module)
+            self.update_remote_menu()
+            # Connect module to SSH client
+            self.audio_module.set_ssh_connect(self.ssh_client)
+            self.audio_analyzer.set_ssh_connect(self.ssh_client)
         except Exception as e:
             self.status_label.config(text=self.get_text(
                 "Status: Connection Failed"), fg="red")
@@ -1297,12 +1302,13 @@ class RemoteHostApp:
         print("[INFO]: Play video...") 
         # TODO: Implement play video
 
-    def update_device_menu(self, *args):
+    def update_remote_menu(self, *args):
         print(f"[init]: Updating playback/recording device list...")
         if not self.ssh_client:
             messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
             return None
         
+        # Remote speaker and mic list
         new_speaker_list = self.ssh_client.get_speaker_list()
         def_spk_idx = 0
         for i, speaker in enumerate(new_speaker_list):
@@ -1320,6 +1326,12 @@ class RemoteHostApp:
                 break
         self.rec_device_combobox['values'] = new_mic_list
         self.rec_device_combobox.current(def_mic_idx)
+
+        # Remote folder paths
+        remote_root_menu = self.ssh_client.get_file_name_list(self.remote_root_path)
+        if remote_root_menu is not None:
+            self.upload_combobox_dest.config(values=remote_root_menu)
+            self.download_combobox_src.config(values=remote_root_menu)
     
     def get_file_name_list(self, path, file_type="all"):
         """
@@ -1345,7 +1357,7 @@ class RemoteHostApp:
             messagebox.showerror(self.get_text("Error"), f"{self.get_text('Failed to list files')}: {str(e)}")
             return None
         
-    def update_folder_menu(self):
+    def update_local_menu(self):
         print(f"[init]: Updating file and folder paths...")
         # local file paths
         local_rec_menu = self.get_file_name_list(self.rec_path, file_type=".wav")
@@ -1362,15 +1374,6 @@ class RemoteHostApp:
         if local_root_menu is not None:
             self.upload_combobox_src.config(values=local_root_menu)
             self.download_combobox_dest.config(values=local_root_menu)
-        
-        # remote file paths
-        if not self.ssh_client:
-            messagebox.showerror(self.get_text("Error"), self.get_text("Not connected to remote host"))
-            return None
-        remote_root_menu = self.ssh_client.get_file_name_list(self.remote_root_path)
-        if remote_root_menu is not None:
-            self.upload_combobox_dest.config(values=remote_root_menu)
-            self.download_combobox_src.config(values=remote_root_menu)
     
     def toggle_analysis(self):
         if self.analysis_progress_running:
@@ -1449,7 +1452,7 @@ class RemoteHostApp:
         Refresh the UI to reflect any changes.
         """
         print("[INFO]: Refreshing UI...") 
-        self.update_device_menu()
+        self.update_remote_menu()
         print("[INFO]: UI refreshed successfully") 
         messagebox.showinfo(self.get_text("Success"),
                             self.get_text("UI refreshed successfully"))
@@ -1474,7 +1477,7 @@ class RemoteHostApp:
         subprocess.run(command, shell=True, check=True)
         self.restart_app()
     
-    def system_setup(self):
+    def system_setup_remote(self):
         """
         Set up the remote system by creating necessary directories and files.
         """
@@ -1486,17 +1489,30 @@ class RemoteHostApp:
             # remote system setup
             self.ssh_client.remote_reset()
             self.ssh_client.setup(self.ssh_client)
-            #local system setup
-            command = (f"mkdir -p {self.cache_path} && " 
-                       f"mkdir -p ./records/ && " 
-                       f"mkdir -p ./plays/ ")
-            subprocess.run(command, shell=True, check=True)
-            print("[init]: Remote/Local system is initialized")
+            print("[init]: Remote system is initialized")
             return True
         except Exception as e:
             messagebox.showerror(self.get_text("Error"),
                                  f"{self.get_text('Failed to set up remote system')}: {str(e)}")
             print("[ERR]: Failed to set up remote system: ") + str(e) 
+            return False
+    
+    def system_setup_local(self):
+        """
+        Set up the local system by creating necessary directories and files.
+        """
+        try:
+            # local system setup
+            command = (f"mkdir -p {self.cache_path} && " 
+                       f"mkdir -p ./records/ && " 
+                       f"mkdir -p ./plays/ ")
+            subprocess.run(command, shell=True, check=True)
+            print("[init]: Local system is initialized")
+            return True
+        except Exception as e:
+            messagebox.showerror(self.get_text("Error"),
+                                 f"{self.get_text('Failed to set up local system')}: {str(e)}")
+            print("[ERR]: Failed to set up local system: ") + str(e) 
             return False
     
     def sync_files(self, force=False, mode="merge"):
