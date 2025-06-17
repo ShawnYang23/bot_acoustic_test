@@ -93,7 +93,7 @@ class AudioAnalyzer:
             return self.doa_file_analyzing(local_ssl_file_name)
         
         # Not exists, proceed on remote server
-        remote_audio_path = self.audio_module.check_and_sync_file(src_audio)
+        remote_audio_path, local_audio_path = self.audio_module.check_and_sync_file(src_audio)
         if remote_audio_path is None:
             print(f"[ERR]: Audio file {src_base_name} does not exist on the remote server.")
             return False
@@ -127,7 +127,7 @@ class AudioAnalyzer:
             self.ssh_client.execute_command("rm -rf /tmp/*ssl_.wav && restart vibe-dsp-server")  # Clean up any previous test output
             print(f"[INFO]: Analyzing audio file {remote_audio_path} for DOA.")
             command = f"cras_api_file_test -c {remote_config_file_test_path} -i {remote_audio_path} -o /tmp/cras_api_file_test.wav"
-            output = self.ssh_client.execute_command(command, force=True)
+            output = self.ssh_client.execute_command(command, force=True, verbose=True)
             if output is None or "Error" in output:
                 print(f"[ERR]: cras_api_file_test command failed for {remote_audio_path}. Output: {output}")
                 return False

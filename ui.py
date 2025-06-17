@@ -282,6 +282,10 @@ class RemoteHostApp:
         sync_file_button = tk.Button(ssh_frame, text=self.get_text("Sync File"), command=self.sync_files)
         sync_file_button.grid(row=6, column=1, sticky="ew", padx=5, pady=10)
 
+        # Clear cache button
+        clear_cache_button = tk.Button(ssh_frame, text=self.get_text("Clear Cache"), command=self.clear_cache)
+        clear_cache_button.grid(row=7, column=0, sticky="ew", padx=5, pady=10)
+
         # log_frame and its internal widgets
         self.log_frame = tk.Frame(self.page_home, relief=tk.SUNKEN, borderwidth=2)
         self.log_frame.grid(row=1, column=3, columnspan=5, rowspan=6, padx=10, pady=10, sticky="nsew")
@@ -980,8 +984,8 @@ class RemoteHostApp:
         if self.ssh_client:
             try:
                 self.ssh_client.disconnect()
-                self.ssh_client = None
-                self.audio_module = None
+                # self.ssh_client = None
+                # self.audio_module = None
                 self.status_label.config(text=self.get_text("Status: Not connected"), fg="red")
                 # messagebox.showinfo(self.get_text("Disconnected"), self.get_text("SSH connection closed."))
             except Exception as e:
@@ -1456,6 +1460,25 @@ class RemoteHostApp:
         print("[INFO]: UI refreshed successfully") 
         messagebox.showinfo(self.get_text("Success"),
                             self.get_text("UI refreshed successfully"))
+    
+    def clear_cache(self):
+        """
+        Clear the cache directory.
+        """
+        ret = messagebox.askyesno("Confirm Clear Cache", "Are you sure you want to clear the cache? This will delete all cached files and recorded files.")
+        if not ret:
+            print("[INFO]: Cache clearing cancelled by user") 
+            return
+        try:
+            command = f"rm -rf {self.cache_path}/* && rm -rf {self.def_rec_path}/*"
+            subprocess.run(command, shell=True, check=True)
+            print("[INFO]: Cache cleared successfully") 
+            messagebox.showinfo(self.get_text("Success"),
+                                self.get_text("Cache cleared successfully"))
+        except Exception as e:
+            messagebox.showerror(self.get_text("Error"),
+                                 f"{self.get_text('Failed to clear cache')}: {str(e)}")
+            print("[ERR]: Failed to clear cache: ") + str(e)
 
     def system_reset(self):
         """
@@ -1470,6 +1493,7 @@ class RemoteHostApp:
             self.ssh_client.remote_reset()
         # Reset the local system
         command = (f"rm -rf {self.cache_path} && "
+                f"rm -rf ./records/ && "
                 f"rm ui_config.ini && "
                 f"mkdir -p {self.cache_path} && "
                 f"mkdir -p {self.def_play_path} && " 
