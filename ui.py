@@ -679,7 +679,7 @@ class RemoteHostApp:
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrogram", "DOA"]
+        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 

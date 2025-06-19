@@ -73,7 +73,8 @@ class AudioAnalyzer:
             print(f"[INFO]: AEC analysis is not implemented yet.")
             return False
         elif method == "Spectrum":
-            pass
+            print(f"[INFO]: Analyzing audio file {target_audio} with Spectrum Analysis.")
+            return self.spectrum_analyzing(target_audio)
         else:
             print(f"[ERR]: Unsupported analysis method: {method}")
             return None
@@ -273,4 +274,41 @@ class AudioAnalyzer:
             return True
         except Exception as e:
             print(f"[ERR]: Failed to analyze audio file with SNR: {e}")
+            return False
+        
+    def spectrum_analyzing(self, audio_file):
+        """
+        Analyze the audio file using spectrum analysis.
+        """
+        if not os.path.isfile(audio_file):
+            print(f"[ERR]: Audio file {audio_file} is not a valid file.")
+            return False
+                
+        try:
+            # Read the audio file
+            with wave.open(audio_file, 'rb') as wf:
+                n_channels = wf.getnchannels()
+                sample_rate = wf.getframerate()
+                n_frames = wf.getnframes()
+                audio_data = wf.readframes(n_frames)
+                audio_np = np.frombuffer(audio_data, dtype=np.int16)
+            
+            for i in range(n_channels):
+                channel_data = audio_np[i::n_channels]
+                # Perform FFT
+                fft_result = np.fft.fft(channel_data)
+                freqs = np.fft.fftfreq(len(fft_result), 1/sample_rate)
+                # Plot the spectrum
+                plt.figure(figsize=(10, 4))
+                plt.plot(freqs[:len(freqs)//2], np.abs(fft_result)[:len(freqs)//2])
+                plt.title(f"Spectrum Analysis - Channel {i+1}")
+                plt.xlabel("Frequency (Hz)")
+                plt.ylabel("Magnitude")
+                plt.grid()
+                plt.savefig(f"./records/spectrum_chn_{i+1}.png")
+                plt.close()
+            print(f"[INFO]: Spectrum analysis completed for {audio_file}.")
+            return True
+        except Exception as e:
+            print(f"[ERR]: Failed to analyze audio file with spectrum analysis: {e}")
             return False
