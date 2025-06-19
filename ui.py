@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter import filedialog
+import tkinter.font as tkFont
 import threading
 import os
 import sys
@@ -28,17 +29,25 @@ class RemoteHostApp:
         self.height = int(self.get_config("Settings", "height", fallback=720))
         self.root.geometry(f"{self.width}x{self.height}")
 
-        # Default ysytem settings
+        # Default system settings
         self.default_aspect_ratio = (16, 9) # only support 16:9 aspect ratio
         self.min_width = 640
         self.max_width = 1920  # Maximum width for the window
+        # devices
+        self.default_speaker = self.get_config("Settings", "default_speaker", fallback="rockchipad82178")
+        self.default_mic = self.get_config("Settings", "default_mic", fallback="vibemicarray")
+        # font
+        self.default_font_size = int(self.get_config("Settings", "font_size", fallback=12))
+        self.support_font_list = tkFont.families()
+        self.default_font_name = self.get_config("Settings", "font_name", fallback="Arial")
+        self.default_font = tkFont.Font(family=self.default_font_name, size=self.default_font_size)
+        self.root.option_add("*Font", self.default_font)
+        # language
+        self.language = self.get_config("Settings", "language", fallback="en")
+        # paths
         self.cache_path = self.get_config("Settings", "cache_path", fallback="./cache/")
         self.def_rec_path = self.get_config("Settings", "def_rec_path", fallback="./records/")
         self.def_play_path = self.get_config("Settings", "def_play_path", fallback="./plays/")
-        self.default_speaker = self.get_config("Settings", "default_speaker", fallback="rockchipad82178")
-        self.default_mic = self.get_config("Settings", "default_mic", fallback="vibemicarray")
-        self.default_font_size = int(self.get_config("Settings", "font_size", fallback=12))
-        self.language = self.get_config("Settings", "language", fallback="en")
         self.remote_root_path = self.get_config("File", "remote_root_path", fallback="/root/")
         self.local_root_path = self.get_config("File", "local_root_path", fallback="./")
 
@@ -118,6 +127,7 @@ class RemoteHostApp:
             config["Settings"] = {
                 "language": "en",
                 "font_size": "12",
+                "font_name": "Arial",
                 "width": "1280",
                 "height": "720",
                 "cache_path": f"{current_dir}/cache/",
@@ -211,8 +221,7 @@ class RemoteHostApp:
             self.page_home.grid_columnconfigure(j, weight=1)
 
         # Top label
-        label = tk.ttk.Label(self.page_home, text=self.get_text("Home Page"),
-                            font=("Arial", self.default_font_size))
+        label = tk.ttk.Label(self.page_home, text=self.get_text("Home Page"))
         label.grid(row=0, column=0, columnspan=8, pady=10, sticky="nsew")
 
         # ssh_frame container and layout configuration
@@ -371,8 +380,7 @@ class RemoteHostApp:
 
         # Title label for file operations
         file_operations_label = tk.Label(
-            self.page_flies, text=self.get_text("File Upload/Download"),
-            font=("Arial", self.default_font_size)
+            self.page_flies, text=self.get_text("File Upload/Download")
         )
         file_operations_label.grid(row=0, column=0, columnspan=2, pady=10, sticky="nsew")
 
@@ -464,7 +472,7 @@ class RemoteHostApp:
         ### Page-Header
         header_rows = 1
         header_cols = 10
-        record_play_label = tk.Label(self.page_aduios, text=self.get_text("Audio"), font=("Arial", self.default_font_size))
+        record_play_label = tk.Label(self.page_aduios, text=self.get_text("Audio"))
         record_play_label.grid(row=0, column=0, rowspan=header_rows, columnspan=header_cols, pady=1, sticky="nsew")
         ### Page-Parameters
         paras_rows = 8
@@ -724,8 +732,7 @@ class RemoteHostApp:
         # Title label for video section
         video_record_label = tk.Label(
             self.page_videos,
-            text=self.get_text("Video Recording and Playback"),
-            font=("Arial", self.default_font_size + 2, "bold")
+            text=self.get_text("Video Recording and Playback")
         )
         video_record_label.grid(row=0, column=0, pady=(20, 10), sticky="n")
 
@@ -760,8 +767,7 @@ class RemoteHostApp:
 
         # Title label for settings
         settings_label = tk.Label(
-            self.page_setings, text=self.get_text("Settings"),
-            font=("Arial", self.default_font_size + 4, "bold")
+            self.page_setings, text=self.get_text("Settings")
         )
         settings_label.grid(row=0, column=0, columnspan=4, pady=(10, 15), sticky="nsew")
 
@@ -795,14 +801,26 @@ class RemoteHostApp:
         self.height_entry.grid(row=0, column=3, sticky="ew", padx=5)
 
         # Font size label and entry
+        font_name_label = tk.Label(para_frame, text=self.get_text("Font Name:"))
+        font_name_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        self.font_name_var = tk.StringVar(value=self.default_font_name)
+        self.font_name_var.trace_add("write", partial(self.on_widget_change_save, self.font_name_var,
+                                                     "Settings", "font_name"))
+        
+        self.font_name_combobox = ttk.Combobox(
+            para_frame, textvariable=self.font_name_var,
+            values=self.support_font_list, state="readonly"
+        )
+        self.font_name_combobox.grid(row=1, column=1, sticky="ew", padx=5)
+
         font_size_label = tk.Label(para_frame, text=self.get_text("Font Size:"))
-        font_size_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        font_size_label.grid(row=1, column=2, sticky="e", padx=5, pady=5)
    
         self.font_size_var = tk.StringVar(value=str(self.default_font_size))
         self.font_size_var.trace_add("write", partial(self.on_widget_change_save, self.font_size_var,
                                                      "Settings", "font_size"))
         self.font_size_entry = tk.Entry(para_frame, textvariable=self.font_size_var)
-        self.font_size_entry.grid(row=1, column=1, sticky="ew", padx=5)
+        self.font_size_entry.grid(row=1, column=3, sticky="ew", padx=5)
 
         # Language selection label and combobox
         language_label = tk.Label(para_frame, text=self.get_text("Language:"))
@@ -843,6 +861,7 @@ class RemoteHostApp:
             new_width = int(self.width_entry.get())
             new_height = int(self.height_entry.get())
             new_font_size = int(self.font_size_entry.get())
+            new_font_name = self.font_name_var.get()
             self.language = self.language_var.get()  # Get the selected language
 
             constrainted_width, constrained_height = self.constraint_window_size(
@@ -858,9 +877,10 @@ class RemoteHostApp:
             self.width_entry.insert(0, str(constrainted_width))
             self.root.geometry(f"{constrainted_width}x{constrained_height}")
             self.default_font_size = new_font_size
+            self.root.option_add("*Font", f"{new_font_name} {new_font_size}")
 
             # Update interface language
-            self.update_language()
+            self.refresh_ui()
 
             messagebox.showinfo(self.get_text("Settings Saved"),
                                 self.get_text("Settings have been saved!"))
@@ -932,7 +952,7 @@ class RemoteHostApp:
 
         return translations[self.language].get(key, key)
 
-    def update_language(self):
+    def refresh_ui(self):
         # Update navigation bar labels when language is changed
         self.navbar.tab(self.page_home, text=self.get_text("SSH"))
         self.navbar.tab(self.page_flies, text=self.get_text("Files"))
@@ -946,6 +966,10 @@ class RemoteHostApp:
         self.setup_page_aduios()
         self.setup_page_videos()
         self.setup_page_setings()
+
+        # reconnect to SSH if already connected
+        if self.ssh_client:
+            self.connect_to_ssh()
 
     def connect_to_ssh(self):
         self.hostname = self.hostname_entry.get()
@@ -1450,16 +1474,6 @@ class RemoteHostApp:
         """
         python = sys.executable
         os.execl(python, python, *sys.argv)
-
-    def refresh_ui(self):
-        """
-        Refresh the UI to reflect any changes.
-        """
-        print("[INFO]: Refreshing UI...") 
-        self.update_remote_menu()
-        print("[INFO]: UI refreshed successfully") 
-        messagebox.showinfo(self.get_text("Success"),
-                            self.get_text("UI refreshed successfully"))
     
     def clear_cache(self):
         """
