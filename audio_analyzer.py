@@ -45,25 +45,26 @@ class AudioAnalyzer:
             if info is None:
                 print(f"[ERR]: Failed to get audio info for {target_audio}.")
                 return False
-            chns = info.get('channels', 0)
+            chns = self.audio_module.channels = info.get('channels', 0)
             # Analyze for direction of arrival (DOA)
             print(f"[INFO]: Analyzing audio file channels {chns} for DOA.")
-            if chns == 8:
-                # check if ssh client is connected
-                if not self.ssh_client.is_connected():
-                    print("[ERR]: SSH client is not connected.")
-                    return False
-                ret = self.doa_analyzing(target_audio)
-                if not ret:
-                    print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
-                    return False
-            elif chns == 9:
-                ret = self.doa_file_analyzing(target_audio)
-                if not ret:
-                    print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
-                    return False
+            if chns == 8 or chns == 9: # 9 for old version, 8 for new version
+                if "ssl" not in target_audio:
+                    # check if ssh client is connected
+                    if not self.ssh_client.is_connected():
+                        print("[ERR]: SSH client is not connected.")
+                        return False
+                    ret = self.doa_analyzing(target_audio)
+                    if not ret:
+                        print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
+                        return False
+                else:
+                    ret = self.doa_file_analyzing(target_audio)
+                    if not ret:
+                        print(f"[ERR]: Failed to analyze audio file {target_audio} for DOA.")
+                        return False
             else:
-                print(f"[ERR]: Unsupported channel count {chns} for DOA analysis. Expected 8 or 9 channels.")
+                print(f"[ERR]: Unsupported channel count {chns} for DOA analysis. Expected 8 channels.")
                 return False
             return True
         elif method == "ANR":
@@ -150,14 +151,16 @@ class AudioAnalyzer:
         if not os.path.exists(ssl_file):
             print(f"[ERR]: SSL file {ssl_file} does not exist.")
             return False
-
+        chns = self.audio_module.channels
         try:
             # Step 1: extract the 7th channel from the SSL file
             ssl_base_name = os.path.basename(ssl_file)
             ssl_channel_file = f"./cache/chn_{ssl_base_name}"
+            # The last channel is ssl_chn
+            ssl_chn = chns - 1 
             # Check if the channel file already exists in cache
             if not os.path.exists(ssl_channel_file):
-                command = f"ffmpeg -y -i {ssl_file} -map_channel 0.0.8 -c:a pcm_s16le -ar 16000 {ssl_channel_file}"
+                command = f"ffmpeg -y -i {ssl_file} -map_channel 0.0.{ssl_chn} -c:a pcm_s16le -ar 16000 {ssl_channel_file}"
                 result = sp.run(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
                 if result.returncode != 0:
                     print(f"[ERR]: Failed to extract channel: {result.stderr.decode()}")
@@ -292,7 +295,7 @@ class AudioAnalyzer:
                 n_frames = wf.getnframes()
                 audio_data = wf.readframes(n_frames)
                 audio_np = np.frombuffer(audio_data, dtype=np.int16)
-            
+            base_name = os.path.basename(audio_file)
             for i in range(n_channels):
                 channel_data = audio_np[i::n_channels]
                 # Perform FFT
@@ -305,9 +308,9 @@ class AudioAnalyzer:
                 plt.xlabel("Frequency (Hz)")
                 plt.ylabel("Magnitude")
                 plt.grid()
-                plt.savefig(f"./records/spectrum_chn_{i+1}.png")
+                plt.savefig(f"./records/spectrum_{base_name}_chn_{i+1}.png")
                 plt.close()
-            print(f"[INFO]: Spectrum analysis completed for {audio_file}.")
+            print(f"[INFO]: Spectrum analysis completed, results saved in ./records/")
             return True
         except Exception as e:
             print(f"[ERR]: Failed to analyze audio file with spectrum analysis: {e}")

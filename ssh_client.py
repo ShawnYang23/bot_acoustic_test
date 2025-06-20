@@ -21,11 +21,31 @@ class SSHClient:
             # Create SSH client instance
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+            
+            # Load system host keys if available with auto-add policy
+            known_hosts_file = os.path.expanduser("~/.ssh/known_hosts")
+            if os.path.exists(known_hosts_file):
+                # Read known_hosts file
+                with open(known_hosts_file, 'r') as f:
+                    known_hosts = f.readlines()
+                # if hostname not in known_hosts, add hostname to known_hosts
+                if not any(self.hostname in line for line in known_hosts):
+                    try:
+                        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        self.client.connect(self.hostname, username=self.username, password=self.password)
+                        host_key = self.client.get_transport().get_remote_server_key()
+                        # write the host key to known_hosts file
+                        with open(known_hosts_file, 'a') as f:
+                            f.write(f"{self.hostname} {host_key.get_name()} {host_key.get_base64()}\n")
+                        
+                        print(f"[INFO]: {self.hostname} added to known hosts.")
+                    except Exception as e:
+                        print(f"[ERROR]: Failed to fetch host key for {self.hostname} - {str(e)}")
+                        return
             # Connect to the remote host
             self.client.connect(
                 self.hostname, username=self.username, password=self.password)
-
+   
             # Create SCP client for file transfer
             self.ssh_transport = self.client.get_transport()
             self.scp_client = SCPClient(self.ssh_transport)
