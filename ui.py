@@ -1479,12 +1479,12 @@ class RemoteHostApp:
         """
         Clear the cache directory.
         """
-        ret = messagebox.askyesno("Confirm Clear Cache", "Are you sure you want to clear the cache? This will delete all cached files and recorded files.")
+        ret = messagebox.askyesno("Confirm Clear Cache", "Are you sure you want to clear the cache? This will delete all cached files.")
         if not ret:
             print("[INFO]: Cache clearing cancelled by user") 
             return
         try:
-            command = f"rm -rf {self.cache_path}/* && rm -rf {self.def_rec_path}/*"
+            command = f"rm -rf {self.cache_path}/*"
             subprocess.run(command, shell=True, check=True)
             print("[INFO]: Cache cleared successfully") 
             messagebox.showinfo(self.get_text("Success"),

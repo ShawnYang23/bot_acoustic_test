@@ -12,6 +12,7 @@ class PesqScore:
         """
         self.bw = bw
         self.tor_sec = 1  # tolerance in seconds for alignment
+        self.mics = 6
         self.cache_dir = "./cache/"
         self.pesq_def_path = self.cache_dir + "pesq_results.csv"
         self.snr_def_path = self.cache_dir + "snr_results.csv"
@@ -76,9 +77,21 @@ class PesqScore:
         except Exception as e:
             status = f"Read error: {e}"
             return deg_file, status, []
-
         deg_data = deg_data.astype(np.float32)
-        
+        # 0. check channel number
+        if deg_data.ndim > 2:
+            status = "Invalid audio file"
+            return deg_file, status, []
+        if deg_data.ndim == 2:
+            if deg_data.shape[1] >= self.mics:
+                # average fist mics channels
+                deg_data = np.mean(deg_data[:, :self.mics], axis=1)
+                print(f"[Warn]: Using first {self.mics} channels for averaging.")
+            else:
+                # take the first channel
+                print(f"[Warn]: Using the first channel for {deg_file}.")
+                deg_data = deg_data[:, 0]
+
         # 1. Algin sample rates based on reference audio
         if deg_rate != ref_rate:
             deg_data = self._resample_signal(deg_data, deg_rate, ref_rate)
@@ -159,7 +172,7 @@ class PesqScore:
         
         results = []  
         for deg_file in deg_list:
-            # Normalize audio rate, length, and RMS levels
+            # Normalize audio rate, channel, length, and RMS levels
             aligned_deg_file, status, deg_data = self.normalize_audio(deg_file, ref_data, ref_rate)
             if len(deg_data) <= 1:
                 results.append([deg_file, status, "N/A"])
@@ -191,7 +204,7 @@ class PesqScore:
         except Exception as e:
             print(f"\nWarning: Could not save CSV file due to error: {e}")
 
-    def snr_calc(self, ref_file, deg_files, seg_frame_ms=0, output_csv=None):
+    def snr_calc(self, ref_file, deg_files, seg_frame_ms=10, output_csv=None):
         """
         Calculate SNR (Signal-to-Noise Ratio) for degraded audio files against a reference file.
         ref_file: Reference audio WAV file.
@@ -209,13 +222,13 @@ class PesqScore:
         for deg_file in deg_list:
             aligned_deg_file, status, deg_data = self.normalize_audio(deg_file, ref_data, ref_rate)
             if status != "OK":
-                results.append([deg_file, status, "N/A"])
+                results.append([deg_file, status, "N/A", f"{seg_frame_ms}"])
                 continue
             # calculate SNR
             if seg_frame_ms > 0:
                 frame_size = int(ref_rate * seg_frame_ms / 1000)
                 if len(deg_data) < frame_size or len(ref_data) < frame_size:
-                    results.append([deg_file, "Frame size too large", "N/A"])
+                    results.append([deg_file, "Frame size too large", "N/A", f"{seg_frame_ms}"])
                     continue
                 # Calculate SNR for each frame
                 snr_values = []
@@ -239,10 +252,10 @@ class PesqScore:
                 else:
                      snr_value = 10 * np.log10(np.sum(ref_data**2) / np.sum(noise**2))
 
-            results.append([aligned_deg_file, "OK", f"{snr_value:.2f}"])
+            results.append([aligned_deg_file, "OK", f"{snr_value:.2f}", f"{seg_frame_ms}"])
             
         # Print results in a table format
-        headers = ["File", "Status", "SNR (dB)"]
+        headers = ["File", "Status", "SNR (dB)", "Seg(ms)"]
         print(tabulate(results, headers=headers, tablefmt="grid"))
 
         # Save results to CSV
