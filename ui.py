@@ -277,9 +277,9 @@ class RemoteHostApp:
         reset_button = tk.Button(ssh_frame, text=self.get_text("Reset"), command=self.system_reset)
         reset_button.grid(row=5, column=0, sticky="ew", padx=5, pady=10)
 
-        # UI Refresh button
-        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("Reboot"), command=self.restart_app)
-        ui_fresh_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
+        # Clear cache button
+        clear_cache_button = tk.Button(ssh_frame, text=self.get_text("Clear Cache"), command=self.clear_cache)
+        clear_cache_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
 
         # Sync file button
         self.sync_mode_var = tk.StringVar(value="merge")
@@ -291,9 +291,13 @@ class RemoteHostApp:
         sync_file_button = tk.Button(ssh_frame, text=self.get_text("Sync File"), command=self.sync_files)
         sync_file_button.grid(row=6, column=1, sticky="ew", padx=5, pady=10)
 
-        # Clear cache button
-        clear_cache_button = tk.Button(ssh_frame, text=self.get_text("Clear Cache"), command=self.clear_cache)
-        clear_cache_button.grid(row=7, column=0, sticky="ew", padx=5, pady=10)
+        # UI Reboot button
+        ui_fresh_button = tk.Button(ssh_frame, text=self.get_text("Reboot"), command=self.restart_app)
+        ui_fresh_button.grid(row=7, column=0, sticky="ew", padx=5, pady=10)
+
+        # System Recover button
+        reset_button = tk.Button(ssh_frame, text=self.get_text("Recover"), command=self.system_recover)
+        reset_button.grid(row=7, column=1, sticky="ew", padx=5, pady=10)
 
         # log_frame and its internal widgets
         self.log_frame = tk.Frame(self.page_home, relief=tk.SUNKEN, borderwidth=2)
@@ -1494,7 +1498,7 @@ class RemoteHostApp:
                                  f"{self.get_text('Failed to clear cache')}: {str(e)}")
             print("[ERR]: Failed to clear cache: ") + str(e)
 
-    def system_reset(self):
+    def system_recover(self):
         """
         Reset the system.
         """
@@ -1514,6 +1518,25 @@ class RemoteHostApp:
                 f"mkdir -p {self.def_rec_path} ")
         subprocess.run(command, shell=True, check=True)
         self.restart_app()
+
+    def system_reset(self):
+        """
+        Reset the system to its initial state.
+        """
+        if not self.ssh_client:
+            messagebox.showerror(self.get_text("Error"),
+                                 self.get_text("Not connected to remote host"))
+            return False
+        try:
+            # Reset remote system
+            self.ssh_client.remote_reset()
+            print("[init]: Remote system is reset")
+            messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the remote system? This will stop all running processes on remote server.")
+        except Exception as e:
+            messagebox.showerror(self.get_text("Error"),
+                                 f"{self.get_text('Failed to reset system')}: {str(e)}")
+            print("[ERR]: Failed to reset system: ") + str(e) 
+            return False
     
     def system_setup_remote(self):
         """

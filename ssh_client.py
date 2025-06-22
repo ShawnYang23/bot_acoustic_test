@@ -223,7 +223,7 @@ class SSHClient:
         Reset the remote system by stopping all audio-related processes and clearing directories.
         """
         # Stop all audio-related processes
-        command = "pkill -f 'arecord|aplay|cras_test_client|scp'"
+        command = "pkill -f 'arecord|aplay|cras_test_client|scp|rsync|cras_api_file_test'"
         self.execute_command(command)
         print("[reset]: All audio-related processes stopped")        
         return True

@@ -89,7 +89,7 @@ class AudioAnalyzer:
             return False
         src_base_name = os.path.basename(src_audio)
         # Check if the SSL file already exists locally
-        local_ssl_file_name = f"./records/ssl_{src_base_name}"
+        local_ssl_file_name = f"./cache/ssl_{src_base_name}"
         if os.path.exists(local_ssl_file_name):
             print(f"[INFO]: SSL file {local_ssl_file_name} already exists. Skipping analysis.")
             return self.doa_file_analyzing(local_ssl_file_name)
@@ -169,7 +169,7 @@ class AudioAnalyzer:
             # Step 2: read the extracted channel audio file and recover the angle
             audio_np, sample_rate = sf.read(ssl_channel_file, dtype='float32')
             if len(audio_np) < sample_rate:
-                print(f"[ERR]: Audio too short.")
+                print(f"[ERR]: Audio too short, less than 1 second.")
                 return False
             def normalize_angle(angle_f):
                 """
