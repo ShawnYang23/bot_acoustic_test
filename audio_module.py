@@ -1,4 +1,5 @@
 from ssh_client import SSHClient
+from pydub.utils import mediainfo
 import os
 import re
 import wave
@@ -102,18 +103,21 @@ class AudioModule:
                 return None
        
         try:
-            with wave.open(local_audio_file, 'rb') as wav_file:
-                sample_rate = wav_file.getframerate()
-                num_frames = wav_file.getnframes()
-                duration = num_frames / sample_rate
-                sample_fmt = "S16_LE" if wav_file.getsampwidth() == 2 else "S32_LE" if wav_file.getsampwidth() == 4 else "UNKNOWN"
-                info = {
-                    'channels': wav_file.getnchannels(),
-                    'sample_rate': sample_rate,
-                    'num_frames': num_frames,
-                    'duration': duration,
-                    'sample_fmt': sample_fmt
-                }
+            file_info = mediainfo(local_audio_file)
+            channels =  int(file_info.get('channels', 2))
+            sample_rate = int(file_info.get('sample_rate', 48000))
+            num_frames = file_info.get('duration_ts', 0)
+            duration = float(file_info.get('duration', 0.0))
+            sample_fmt = (file_info.get('sample_fmt', 's16')).upper()
+            sample_fmt = sample_fmt + "_LE"
+            info = {
+                'channels':channels,
+                'sample_rate': sample_rate,
+                'num_frames': num_frames,
+                'duration': int(duration),
+                'sample_fmt': sample_fmt
+            }
+            print(f"[INFO]: WAV file info: {info}")
             return info
         except Exception as e:
             print(f"[ERR]: Failed to read local WAV file {local_audio_file}: {e}")
