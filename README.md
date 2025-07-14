@@ -8,8 +8,8 @@
 #### 3. Special Functions (requiring additional devices): Accurate positioning analysis, built-in microphone airtightness testing, audio quality  evaluation using PESQ (Perceptual Evaluation of Speech Quality), etc.
 
 
+##############################Linux####################################
 # Environment setting (Ubunutu/Deb as example)
-
 ## 1. Install python3 >= 3.11(recommand)
 ### Be careful, following cmd will change your system python env. Of course, when the problem entercount, you can switch python version back.
 
@@ -46,5 +46,33 @@ pyenv global 3.11.9
 #1. CMD version
 ./run_test.py --init
 #2. GUI version
+./ui.py 
+```
+
+##########################Windows############################
+# 1. Download and install windows requirements based on your PC
+[git](https://git-scm.com/downloads/win)
+[python3.11](https://www.python.org/downloads/windows/)
+[vs_BuildTools](https://visualstudio.microsoft.com/zh-hans/visual-cpp-build-tools/)
+[ffmpeg](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z): Unzip this file into a known path， [FFMPEG_PATH]: /your/path/to/ffmpeg/bin/
+
+# 2. etup environment 
+``` powershell
+  py -3.11 -c "import sys; print(sys.executable)" 
+  #eg. get: C:\Users\jmysy\AppData\Local\Programs\Python\Python311\python.exe
+```
+[PY_PATH]: "C:\Users\jmysy\AppData\Local\Programs\Python\Python311"
+[PIP_PATH]: "C:\Users\jmysy\AppData\Local\Programs\Python\Python311/Scripts"
+Add these [PY_PATH PIP_PATH FFMPEG_PATH] to win environment (recommanded adding as the first items), following under direction:
+[Search]->[Edit System Environment Varibles]->[Environment Varibles]->[Path]->[NEW]
+
+# 3. Install requirement.txt
+``` shell
+   pip install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple
+```
+
+# 4. Init bot_acoustic_testing  tool
+``` shell
+#Only GUI version
 ./ui.py 
 ```

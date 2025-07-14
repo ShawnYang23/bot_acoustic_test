@@ -1,12 +1,12 @@
 from ssh_client import SSHClient
 import re
 import os
-import subprocess as sp
 import numpy as np
 import wave
 import matplotlib.pyplot as plt
 import soundfile as sf
 from pesq_score import PesqScore
+from pydub import AudioSegment
 
 
 class AudioAnalyzer:
@@ -151,20 +151,39 @@ class AudioAnalyzer:
         if not os.path.exists(ssl_file):
             print(f"[ERR]: SSL file {ssl_file} does not exist.")
             return False
+        # Step 1: extract the 7th channel from the SSL file
+        ssl_base_name = os.path.basename(ssl_file)
+        ssl_channel_file = f"./cache/chn_{ssl_base_name}"
         chns = self.audio_module.channels
+        ssl_chn = chns - 1  # Last channel as SSL channel
+
+        if os.path.exists(ssl_channel_file):
+            print(f"[INFO]: SSL channel file {ssl_channel_file} already exists. Skipping extraction.")
+            return True
+            
         try:
-            # Step 1: extract the 7th channel from the SSL file
-            ssl_base_name = os.path.basename(ssl_file)
-            ssl_channel_file = f"./cache/chn_{ssl_base_name}"
-            # The last channel is ssl_chn
-            ssl_chn = chns - 1 
-            # Check if the channel file already exists in cache
-            if not os.path.exists(ssl_channel_file):
-                command = f"ffmpeg -y -i {ssl_file} -map_channel 0.0.{ssl_chn} -c:a pcm_s16le -ar 16000 {ssl_channel_file}"
-                result = sp.run(command, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
-                if result.returncode != 0:
-                    print(f"[ERR]: Failed to extract channel: {result.stderr.decode()}")
-                    return False
+            # 加载多通道音频（必须是 .wav 且格式支持）
+            audio = AudioSegment.from_file(ssl_file)
+            if audio.channels < chns:
+                print(f"[ERR]: File only has {audio.channels} channels, expected at least {chns}")
+                return False
+
+            # 分离出各个通道
+            split_channels = audio.split_to_mono()
+
+            if ssl_chn >= len(split_channels):
+                print(f"[ERR]: Cannot extract channel {ssl_chn}, only {len(split_channels)} available.")
+                return False
+
+            # 获取目标通道并转换采样率
+            target_channel = split_channels[ssl_chn].set_frame_rate(16000)
+
+            # 确保目录存在
+            os.makedirs(os.path.dirname(ssl_channel_file), exist_ok=True)
+
+            # 导出目标通道为 WAV
+            target_channel.export(ssl_channel_file, format="wav")
+
 
             # Step 2: read the extracted channel audio file and recover the angle
             audio_np, sample_rate = sf.read(ssl_channel_file, dtype='float32')

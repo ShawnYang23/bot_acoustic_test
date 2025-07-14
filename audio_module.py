@@ -3,7 +3,6 @@ from pydub.utils import mediainfo
 import os
 import re
 import wave
-import subprocess as sp
 
 class AudioModule:
     def __init__(self, ssh_client: SSHClient):

@@ -14,7 +14,10 @@ from functools import partial
 from ssh_client import SSHClient
 from audio_module import AudioModule
 from audio_analyzer import AudioAnalyzer
-import subprocess
+import shutil
+import paramiko
+import stat
+
 
 class RemoteHostApp:
     def __init__(self, root):
@@ -102,6 +105,7 @@ class RemoteHostApp:
         self.navbar.add(self.page_setings, text=self.get_text("Settings"))
 
         # Setup pages
+        print("[Tips]: If first time run, please wait a few minutes to load the configuration file.")
         self.setup_page_home()
         self.setup_page_flies()
         self.setup_page_aduios()
@@ -1488,8 +1492,9 @@ class RemoteHostApp:
             print("[INFO]: Cache clearing cancelled by user") 
             return
         try:
-            command = f"rm -rf {self.cache_path}/*"
-            subprocess.run(command, shell=True, check=True)
+            if os.path.exists(self.cache_path):
+                shutil.rmtree(self.cache_path)
+                os.makedirs(self.cache_path, exist_ok=True)
             print("[INFO]: Cache cleared successfully") 
             messagebox.showinfo(self.get_text("Success"),
                                 self.get_text("Cache cleared successfully"))
@@ -1510,13 +1515,16 @@ class RemoteHostApp:
         if self.ssh_client:
             self.ssh_client.remote_reset()
         # Reset the local system
-        command = (f"rm -rf {self.cache_path} && "
-                f"rm -rf ./records/ && "
-                f"rm ui_config.ini && "
-                f"mkdir -p {self.cache_path} && "
-                f"mkdir -p {self.def_play_path} && " 
-                f"mkdir -p {self.def_rec_path} ")
-        subprocess.run(command, shell=True, check=True)
+        config_file = "ui_config.ini"
+        if os.path.exists(config_file) and os.path.isfile(config_file):
+            os.remove(config_file)
+        record_dir = "./records/"
+        for path in [self.cache_path, record_dir]:
+            if os.path.exists(path) and os.path.isdir(path):
+                shutil.rmtree(path)
+        for path in [self.cache_path, self.def_play_path, self.def_rec_path]:
+            os.makedirs(path, exist_ok=True)
+        
         self.restart_app()
 
     def system_reset(self):
@@ -1564,60 +1572,68 @@ class RemoteHostApp:
         """
         try:
             # local system setup
-            command = (f"mkdir -p {self.cache_path} && " 
-                       f"mkdir -p ./records/ && " 
-                       f"mkdir -p ./plays/ ")
-            subprocess.run(command, shell=True, check=True)
+            record_dir = "./records/"
+            play_dir = "./plays/"
+            for path in [self.cache_path, record_dir, play_dir]:
+                os.makedirs(path, exist_ok=True)
             print("[init]: Local system is initialized")
             return True
         except Exception as e:
             messagebox.showerror(self.get_text("Error"),
                                  f"{self.get_text('Failed to set up local system')}: {str(e)}")
-            print("[ERR]: Failed to set up local system: ") + str(e) 
+            print(f"[ERR]: Failed to set up local system: {e}")
             return False
-    
+
     def sync_files(self, force=False, mode="merge"):
         """
-        Synchronize files between local and remote directories.
-        local:[./plays/] <-> remote:[/root/plays/]
-        local:[./records/] <-> remote:[/root/records/]
+        Synchronize files between local and remote directories using paramiko (no rsync).
         """
         if not self.ssh_client:
             messagebox.showerror(self.get_text("Error"),
-                                 self.get_text("Not connected to remote host"))
+                                self.get_text("Not connected to remote host"))
             return False
         
         if not force:
             mode = self.sync_mode_combobox.get()
-        # Sync local files to remote
-        if mode == "local":
-            print("[INFO]: Syncing local files to remote...")
-            sync_play = f"sshpass -p {self.password} rsync -avz --delete ./plays/ {self.username}@{self.hostname}:/root/plays/"
-            sync_record = f"sshpass -p {self.password} rsync -avz --delete ./records/ {self.username}@{self.hostname}:/root/records/"
-            result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite and delete remote files.")
-            if not result:
-                print("[INFO]: Sync operation cancelled by user")
-                return False
-        elif mode == "remote":
-            print("[INFO]: Syncing remote files to local...")
-            sync_play = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/plays/ ./plays/"
-            sync_record = f"sshpass -p {self.password} rsync -avz --delete {self.username}@{self.hostname}:/root/records/ ./records/"
-            result = messagebox.askyesno("Confirm", "Do you want to sync remote files to local? This might overwrite and delete local files.")
-            if not result:
-                print("[INFO]: Sync operation cancelled by user")
-                return False
-        else: #merge
-            print("[sync]: Merging local and remote files...")
-            sync_play = f"sshpass -p {self.password} rsync -avz ./plays/ {self.username}@{self.hostname}:/root/plays/"
-            sync_record = f"sshpass -p {self.password} rsync -avz ./records/ {self.username}@{self.hostname}:/root/records/"
-            subprocess.run(sync_play, shell=True, check=True)
-            subprocess.run(sync_record, shell=True, check=True)
-            sync_play = f"sshpass -p {self.password} rsync -avz {self.username}@{self.hostname}:/root/plays/ ./plays/"
-            sync_record = f"sshpass -p {self.password} rsync -avz {self.username}@{self.hostname}:/root/records/ ./records/"
 
-        subprocess.run(sync_play, shell=True, check=True)
-        subprocess.run(sync_record, shell=True, check=True)
+        local_dirs = {
+            "plays": "./plays/",
+            "records": "./records/"
+        }
+        remote_dirs = {
+            "plays": "/root/plays/",
+            "records": "/root/records/"
+        }
+
+        if mode == "local":
+            result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite remote files.")
+            if not result:
+                print("[INFO]: Sync operation cancelled by user")
+                return False
+            for key in local_dirs:
+                print(f"[sync]: Uploading {key}...")
+                self.ssh_client.upload_file(local_dirs[key], remote_dirs[key])
+
+        elif mode == "remote":
+            result = messagebox.askyesno("Confirm", "Do you want to sync remote files to local? This might overwrite local files.")
+            if not result:
+                print("[INFO]: Sync operation cancelled by user")
+                return False
+            for key in local_dirs:
+                print(f"[sync]: Downloading {key}...")
+                self.ssh_client.download_file(remote_dirs[key], local_dirs[key])
+
+        else:  # merge
+            print("[sync]: Merging local → remote → local...")
+            for key in local_dirs:
+                print(f"[sync]: Uploading {key}...")
+                self.ssh_client.upload_file(local_dirs[key], remote_dirs[key])
+            for key in local_dirs:
+                print(f"[sync]: Downloading {key}...")
+                self.ssh_client.download_file(remote_dirs[key], local_dirs[key])
+
         print(f"[sync]: Synchronization completed successfully, mode: {mode}")
+        return True
 
 if __name__ == "__main__":
     root = tk.Tk()

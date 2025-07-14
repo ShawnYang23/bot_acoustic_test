@@ -1,7 +1,8 @@
 import paramiko
 import os
-import subprocess
 from scp import SCPClient
+import shlex
+
 
 
 class SSHClient:
@@ -107,28 +108,62 @@ class SSHClient:
             print(f"[ERR]: Failed to execute command: {e}")
             return None
 
-    def upload_file(self, local_file, remote_path):
+    def upload_file(self, local_path, remote_path):
         """
         Upload a file to the remote server using SCP.
         """
         try:
             if self.scp_client:
-                self.scp_client.put(local_file, remote_path)
-                print(f"[INFO]: File {local_file} uploaded to {remote_path}")
+                if os.path.isdir(local_path):
+                    if remote_path.endswith('/'):
+                        remote_basename_files = []
+                        for file in self.get_file_name_list(remote_path):
+                            remote_basename_files.append(os.path.basename(file.replace("\\", '/')))
+                        print(f"[INFO]: Uploading local files in {local_path} to remote folder {remote_path}")
+                        for root, dirs, files in os.walk(local_path):
+                            for file in files:
+                                if os.path.basename(file) not in remote_basename_files:
+                                    local_file_path = os.path.join(root, file).replace("\\", '/')
+                                    print(f"[INFO]: Uploading file {local_file_path} to remote {remote_path}")
+                                    self.scp_client.put(local_file_path, remote_path)
+                    else:
+                        printf(f"[ERR]: Cannot upload directory {local_path} to remote file {remote_path}. Please provide a remote directory path.")
+                else:
+                    print(f"[INFO]: Uploading file {local_path} to remtoe {remote_path}")
+                    self.scp_client.put(local_path, remote_path)
+                print(f"[INFO]: File uploaded successfully: {local_path} to {remote_path}")
             else:
                 print(
                     "SCP client not initialized. Ensure SSH connection is established.")
         except Exception as e:
             print(f"[ERR]: Failed to upload file: {e}")
+    
 
-    def download_file(self, remote_file, local_path):
+    def download_file(self, remote_path, local_path):
         """
         Download a file from the remote server using SCP.
         """
         try:
             if self.scp_client:
-                self.scp_client.get(remote_file, local_path)
-                print(f"[INFO]: File {remote_file} downloaded to {local_path}")
+                if os.path.isdir(local_path):
+                    if remote_path.endswith('/'):
+                        print(f"[INFO]: Downloading remote files in {remote_path} to local folder {local_path}")
+                        remote_files = set(self.get_file_name_list(remote_path))
+                        for file in remote_files:
+                            local_basename_files = []
+                            for file in os.listdir(local_path):
+                                local_basename_files.append(os.path.basename(file))
+                            if os.path.basename(file) not in local_basename_files:
+                                print(f"[INFO]: Downloading file {remote_file_path} to local {local_path}")
+                                remote_file_path = os.path.join(remote_path, file)
+                                remote_file_path = remote_file_path.replace("\\", '/')
+                                self.scp_client.get(remote_file_path, local_path)   
+                    else:
+                        print(f"[ERR]: Cannot download remote file {remote_path} to local directory {local_path}. Please provide a local file path.")
+                else:
+                    print(f"[INFO]: Downloading file {remote_path} to local {local_path}")
+                    self.scp_client.get(remote_path, local_path)
+                print(f"[INFO]: File downloaded successfully: {remote_path} to {local_path}")
             else:
                 print(
                     "SCP client not initialized. Ensure SSH connection is established.")
@@ -179,13 +214,25 @@ class SSHClient:
         try:
             remote_dir = os.path.dirname(remote_path)
             keyword = os.path.basename(remote_path)
+
             if file_type == ".wav":
-                # List wav files and directories
-                command = f"find {remote_dir} -maxdepth 1 \\( -type f -name '*.wav' -o -type d \\) -exec sh -c 'if [ -d \"$1\" ];then echo \"$1/\"; else echo \"$1\"; fi' sh {{}} \\;"
+                command = (
+                    f"find {shlex.quote(remote_dir)} -maxdepth 1 "
+                    f"\\( -type f -name '*.wav' -o -type d \\) "
+                    f"-exec sh -c 'if [ -d \"$1\" ]; then echo \"$1/\"; else echo \"$1\"; fi' sh {{}} \\;"
+                )
+
             elif file_type == "dir":
-                command = f"ls -d {remote_dir}/*/ | awk '{{print $1\"/\"}}'"
+                command = f"find {shlex.quote(remote_dir)} -mindepth 1 -maxdepth 1 -type d -exec printf '%s/\\n' {{}} \\;"
+
             else:
-                command = f"ls {remote_dir} | awk '{{if (-d $1) print $1\"/\"; else print $1}}'"
+                command = (
+                    f"ls -1 {shlex.quote(remote_dir)} | "
+                    f"while read f; do "
+                    f"if [ -d \"{remote_dir}/$f\" ]; then echo \"$f/\"; else echo \"$f\"; fi; "
+                    f"done"
+                )
+
 
             output = self.execute_command(command)
             if output:

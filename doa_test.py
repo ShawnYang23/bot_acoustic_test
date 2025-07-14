@@ -2,8 +2,8 @@ import os
 import numpy as np
 import argparse
 import re
-import subprocess
 import sys
+from collections import Counter
 
 # doa data structure
 doa = {
@@ -23,33 +23,6 @@ doa = {
     "raw_data": {},
 
 }
-
-
-def execute_local_command(command, verbose=True, fatal=True):
-    try:
-        # Use subprocess.run for easy command execution and output capture
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if not verbose:
-            print(f"[LOCAL COMMAND]# {command}")
-            print(f"[STDOUT:] {result.stdout}")
-            print(f"[STDERR:] {result.stderr}")
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with return code {e.returncode}")
-        print(f"STDERR: {e.stderr}")
-        # Handle errors (command failed)
-        if fatal:
-            print("fatal error, exit")
-            sys.exit(2)
-        return e.stderr
-
 
 def arzimuth_map_mic(arzimuth):
     # arzimuth is in the range of 0-360
@@ -89,31 +62,37 @@ def load_doa_data(file_path, args):
         "erorr_arzimuth": [],
         "raw_data": {},
     }
-    # parse the file name 100cm_-60cm_240.txt
-    if args.device == "std":
-        match = re.match(r"std_([0-9]+)cm_(-?[0-9]+)cm_(-?[0-9]+).txt",
-                     os.path.basename(file_path))
-    else:
-        match = re.match(r"evt3_([0-9]+)cm_(-?[0-9]+)cm_(-?[0-9]+).txt",
-                     os.path.basename(file_path))
-    if match:
-        local_doa["radius"] = int(match.group(1))
-        local_doa["height"] = int(match.group(2))
-        local_doa["azimuth"] = int(match.group(3))
-        local_doa["mic_num"] = arzimuth_map_mic(local_doa["azimuth"])
-    else:
-        # print(f"Invalid file name: {os.path.basename(file_path)}")
-        return None
-    # parse the file content
-    # print(f"Parse the file: {file_path}")
-    stdout = execute_local_command(
-        f"cat {file_path} | sort | uniq -c | sort -nr")
-    # print(stdout)
-    for line in stdout.splitlines():
-        count, angle = line.split()
-        local_doa["raw_data"][angle] = count
-    return local_doa
 
+    # extract radius、height、azimuth
+    basename = os.path.basename(file_path)
+    if args.device == "std":
+        match = re.match(r"std_([0-9]+)cm_(-?[0-9]+)cm_(-?[0-9]+).txt", basename)
+    else:
+        match = re.match(r"evt3_([0-9]+)cm_(-?[0-9]+)cm_(-?[0-9]+).txt", basename)
+
+    if not match:
+        return None
+
+    local_doa["radius"] = int(match.group(1))
+    local_doa["height"] = int(match.group(2))
+    local_doa["azimuth"] = int(match.group(3))
+    local_doa["mic_num"] = arzimuth_map_mic(local_doa["azimuth"])
+
+    # parse the file content
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        print(f"Failed to read file {file_path}: {e}")
+        return None
+
+    counter = Counter(lines)
+    sorted_items = sorted(counter.items(), key=lambda x: int(x[1]), reverse=True)
+
+    for angle, count in sorted_items:
+        local_doa["raw_data"][angle] = str(count)
+
+    return local_doa
 
 def load_doa_file(data_dir, args):
     if not os.path.exists(data_dir):
