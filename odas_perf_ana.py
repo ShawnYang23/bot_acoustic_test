@@ -4,7 +4,6 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 
-
 def process_json_file(filepath, odas_delays, component_delays, module_delays):
     try:
         if not os.path.isfile(filepath):
@@ -15,13 +14,20 @@ def process_json_file(filepath, odas_delays, component_delays, module_delays):
             data = json.load(file)
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Error reading file {filepath}: {e}")
-        return
+        return False
     # moving averge of odas_delay
-    window_size = 10
+    window_size = 1
     odas_delay = data.get("odas_delay", [])
-    # odas_delay = odas_delay[0:6000]
-    odas_delay_moving_avg = [sum(odas_delay[i:i + window_size]) /
-                             window_size for i in range(len(odas_delay) - window_size + 1)]
+    # odas_delay = odas_delay[300:]
+    if window_size > 0 and window_size <= len(odas_delay):
+        # calculate moving average
+        odas_delay_moving_avg = [sum(odas_delay[i:i + window_size]) /
+                                 window_size for i in range(len(odas_delay) - window_size + 1)]
+    elif window_size == 0:
+        odas_delay_moving_avg = odas_delay
+    else:
+        print(f"Invalid window size: {window_size}")
+        return False
     # sort components and modules by descending value of performance
     component_delay = data.get("Components", {})
     component_delay_sorted = dict(
@@ -32,6 +38,7 @@ def process_json_file(filepath, odas_delays, component_delays, module_delays):
     odas_delays.append(odas_delay_moving_avg)
     component_delays.append(component_delay_sorted)
     module_delays.append(module_delay_sorted)
+    return True
 
 
 def singleton_analysis(args):
@@ -40,13 +47,18 @@ def singleton_analysis(args):
     component_delay = []
     module_delay = []
     label = []
+    output_dir= "./cache/"
 
     # process single json file
     if os.path.isfile(args.input):
         process_json_file(args.input, odas_delay,
                           component_delay, module_delay)
+        if odas_delay == [] or component_delay == [] or module_delay == []:
+                    print(f"No odas_delay or component_delay or module_delay found in {args.input}.")
+                    sys.exit(1)
         file_name = os.path.basename(args.input)
         label = (file_name.split(".")[0])
+        args.output = os.path.join(output_dir, f"{label}.png")
     else:
         print(f"Error: {args.input} is not a valid file.")
         sys.exit(1)
@@ -57,17 +69,17 @@ def singleton_analysis(args):
     print(f"shape of odas_delay: {len(odas_delay)}")
     # draw line chart for odas_delay
     for i, delays in enumerate(odas_delay):
-        delays = [d * 1000 for d in delays]
+        delays = [d / 1000 for d in delays]
         axs[0, 0].plot(range(len(delays)), delays, marker='o',
                        linestyle='-', label="odas_delay")
     axs[0, 0].set_title('Odas Delay Line Chart')
     axs[0, 0].set_xlabel('Index')
-    axs[0, 0].set_ylabel('Delay (us)')
+    axs[0, 0].set_ylabel('Delay (ms)')
     axs[0, 0].grid(True)
     avg = sum(delays) / len(delays)
     avg_line = [avg] * len(delays)
     axs[0, 0].plot(
-        avg_line, label=f"Avg ({avg:.2f} us)", marker='none', linestyle='--')
+        avg_line, label=f"Avg ({avg:.2f} ms)", marker='none', linestyle='--')
     axs[0, 0].legend()
     # axs[0, 0].set_ylim([avg - 500, avg + 500])
 
@@ -86,7 +98,7 @@ def singleton_analysis(args):
         axs[0, 1].set_xticklabels(keys, rotation=45)
         axs[0, 1].set_title('Component Performance Histogram')
         axs[0, 1].set_xlabel('Component')
-        axs[0, 1].set_ylabel('Consuming Time (us)')
+        axs[0, 1].set_ylabel('Consuming Time (ms)')
         axs[0, 1].grid(axis='y')
         axs[0, 1].legend()
         total = Duration_Time
@@ -121,7 +133,7 @@ def singleton_analysis(args):
         axs[1, 1].set_xticklabels(keys, rotation=45)
         axs[1, 1].set_title('Module Performance Histogram')
         axs[1, 1].set_xlabel('Module')
-        axs[1, 1].set_ylabel('Consuming Time (us)')
+        axs[1, 1].set_ylabel('Consuming Time (ms)')
         axs[1, 1].grid(axis='y')
         axs[1, 1].legend()
         total = Module_Time
@@ -144,6 +156,8 @@ def multi_odas_analysis(args):
     component_delays = []
     module_delays = []
     labels = []
+    file_name = ""
+    output_dir= "./cache/"
 
     # process all json files in the input folder
     if os.path.isdir(args.input):
@@ -153,23 +167,37 @@ def multi_odas_analysis(args):
                     continue
                 process_json_file(os.path.join(args.input, file), odas_delays,
                                   component_delays, module_delays)
+                if odas_delays == [] or component_delays == [] or module_delays == []:
+                    print(f"Warning: No odas_delay or component_delay or module_delay found in {file}.")
+                    continue
                 file_name = os.path.basename(file)
                 labels.append(file_name.split(".")[0])
+            else:
+                print(f"Skipping non-json file: {file}")
     else:
         print(f"Error: {args.input} is not a valid directory.")
         sys.exit(1)
+
+    if labels == []:
+        print("No valid json files found in the input directory.")
+        sys.exit(1)
+
+    if args.output == "":
+        dir_name = os.path.dirname(args.input)
+        closest_dir = os.path.basename(dir_name)
+        args.output = os.path.join(output_dir, f"{closest_dir}_cmp.png")
 
     if args.perf_name == "pipe":
         # plot all odas_delay in the same figure with line chart
         plt.figure()
         for i, delays in enumerate(odas_delays):
-            # us to us
+            # s to ms
             delays = [d * 1000 for d in delays]
             avg = sum(delays) / len(delays)
             plt.plot(range(len(delays)), delays, marker='o',
                      linestyle='-', label=labels[i])
             avg_line = [avg] * len(delays)
-            plt.plot(avg_line, label=f"{labels[i]} Avg ({avg:.2f} us)",
+            plt.plot(avg_line, label=f"{labels[i]} Avg ({avg:.2f} ms)",
                      marker='none', linestyle='--')
 
         plt.title('Odas Delay Line Chart')
@@ -200,7 +228,7 @@ def multi_odas_analysis(args):
         plt.xticks(range(len(keys)), keys, rotation=45)
         plt.title('Component Performance Histogram')
         plt.xlabel('Process Component')
-        plt.ylabel('Consuming Time (us)')
+        plt.ylabel('Consuming Time (ms)')
         plt.grid(axis='y')
         plt.legend()
     elif args.perf_name == "module":
@@ -216,11 +244,11 @@ def multi_odas_analysis(args):
         plt.xticks(range(len(keys)), keys, rotation=45)
         plt.title('Module Performance Histogram')
         plt.xlabel('Process Module')
-        plt.ylabel('Consuming Time (us)')
+        plt.ylabel('Consuming Time (ms)')
         plt.grid(axis='y')
         plt.legend()
     else:
-        print("Invalid filter name")
+        print(f"Invalid perf name {args.perf_name}")
         sys.exit(1)
 
     plt.savefig(args.output)
@@ -234,7 +262,7 @@ def main():
     parser.add_argument("-m", "--mode", choices=["single", "multi"], default="single",
                         help="The mode of input file or folder")
     parser.add_argument("-o", "--output", type=str,
-                        required=False, default="output.png", help="The output file")
+                        required=False, default="", help="The output file")
     parser.add_argument("-p", "--perf_name", choices=["none", "pipe", "comp", "module"], default="none",
                         help="The performance name to be analyzed in multi mode")
     parser.add_argument("-f", "--filter_name", type=str, required=False,
@@ -242,13 +270,16 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
-        print("Directory not found")
+        print(f"Input directory not found: {args.input}")
         return
-    output_path_dir = os.path.dirname(args.output)
-    if (output_path_dir and not os.path.exists(output_path_dir)):
-        os.makedirs(output_path_dir)
+    if args.output != "":
+        output_path_dir = os.path.dirname(args.output)
+        if not os.path.exists(output_path_dir):
+            print(f"Output directory not found: {output_path_dir}")
+            return
+        
     if args.mode == "multi" and args.perf_name == "none":
-        args.perf_name = "Odas"
+        args.perf_name = "module"
 
     if args.mode == "single":
         singleton_analysis(args)
