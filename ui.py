@@ -1062,11 +1062,11 @@ class RemoteHostApp:
                                      self.get_text("Source file does not exist on remote host"))
                 print("[ERR]: Source file does not exist on remote host") 
                 return
-            dest_path = self.download_combobox_src.get()
+            dest_path = self.download_combobox_dest.get()
             if not os.path.isdir(dest_path):
                 messagebox.showerror(self.get_text("Error"),
                                      self.get_text("Destination path does not exist or is not a directory"))
-                print("[ERR]: Destination path does not exist or is not a directory") 
+                print(f"[ERR]: Destination path does not exist or is not a directory: {dest_path}")
                 return
             try:
                 self.ssh_client.download_file(src_path, dest_path)

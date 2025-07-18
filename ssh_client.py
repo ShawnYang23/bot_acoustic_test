@@ -115,26 +115,25 @@ class SSHClient:
         try:
             if self.scp_client:
                 if os.path.isdir(local_path):
-                    if remote_path.endswith('/'):
-                        remote_basename_files = []
-                        for file in self.get_file_name_list(remote_path):
-                            remote_basename_files.append(os.path.basename(file.replace("\\", '/')))
-                        print(f"[INFO]: Uploading local files in {local_path} to remote folder {remote_path}")
-                        for root, dirs, files in os.walk(local_path):
-                            for file in files:
-                                if os.path.basename(file) not in remote_basename_files:
-                                    local_file_path = os.path.join(root, file).replace("\\", '/')
-                                    print(f"[INFO]: Uploading file {local_file_path} to remote {remote_path}")
-                                    self.scp_client.put(local_file_path, remote_path)
-                    else:
-                        printf(f"[ERR]: Cannot upload directory {local_path} to remote file {remote_path}. Please provide a remote directory path.")
+                    # Folder update uses strategy: check file name list and download only new files
+                    remote_basename_files = []
+                    for file in self.get_file_name_list(remote_path):
+                        remote_basename_files.append(os.path.basename(file.replace("\\", '/')))
+                    # print(f"[INFO]: Uploading local files in {local_path} to remote folder {remote_path}")
+                    for root, dirs, files in os.walk(local_path):
+                        for file in files:
+                            # TODO: check if files content is changed
+                            if os.path.basename(file) not in remote_basename_files:
+                                local_file_path = os.path.join(root, file).replace("\\", '/')
+                                print(f"[INFO]: Uploading file {local_file_path} to remote {remote_path}")
+                                self.scp_client.put(local_file_path, remote_path)
                 else:
+                    # Single file upload uses strategy: force replace
                     print(f"[INFO]: Uploading file {local_path} to remtoe {remote_path}")
                     self.scp_client.put(local_path, remote_path)
                 print(f"[INFO]: File uploaded successfully: {local_path} to {remote_path}")
             else:
-                print(
-                    "SCP client not initialized. Ensure SSH connection is established.")
+                print("SCP client not initialized. Ensure SSH connection is established.")
         except Exception as e:
             print(f"[ERR]: Failed to upload file: {e}")
     
@@ -145,28 +144,30 @@ class SSHClient:
         """
         try:
             if self.scp_client:
-                if os.path.isdir(local_path):
-                    if remote_path.endswith('/'):
-                        print(f"[INFO]: Downloading remote files in {remote_path} to local folder {local_path}")
-                        remote_files = set(self.get_file_name_list(remote_path))
-                        for file in remote_files:
-                            local_basename_files = []
-                            for file in os.listdir(local_path):
-                                local_basename_files.append(os.path.basename(file))
-                            if os.path.basename(file) not in local_basename_files:
-                                print(f"[INFO]: Downloading file {remote_file_path} to local {local_path}")
-                                remote_file_path = os.path.join(remote_path, file)
-                                remote_file_path = remote_file_path.replace("\\", '/')
-                                self.scp_client.get(remote_file_path, local_path)   
-                    else:
-                        print(f"[ERR]: Cannot download remote file {remote_path} to local directory {local_path}. Please provide a local file path.")
+                if remote_path.endswith('/'):
+                    # Folder download uses strategy: check file name list and download only new files
+                    # print(f"[INFO]: Downloading remote files in {remote_path} to local folder {local_path}")
+                    remote_files = set(self.get_file_name_list(remote_path))
+                    local_basename_files = []
+                    for file in os.listdir(local_path):
+                        local_basename_files.append(os.path.basename(file))
+                    for file in remote_files:
+                        # TODO: check if files content is changed
+                        if os.path.basename(file) not in local_basename_files:
+                            remote_file_path = os.path.join(remote_path, file)
+                            remote_file_path = remote_file_path.replace("\\", '/')
+                            print(f"[INFO]: Downloading file {remote_file_path} to local {local_path}")
+                            self.scp_client.get(remote_file_path, local_path)   
                 else:
+                    # Signle file download uses strategy: force replace
+                    parent_dir = os.path.dirname(local_path)
+                    if parent_dir and not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir, exist_ok=True)
                     print(f"[INFO]: Downloading file {remote_path} to local {local_path}")
                     self.scp_client.get(remote_path, local_path)
                 print(f"[INFO]: File downloaded successfully: {remote_path} to {local_path}")
             else:
-                print(
-                    "SCP client not initialized. Ensure SSH connection is established.")
+                print("SCP client not initialized. Ensure SSH connection is established.")
         except Exception as e:
             print(f"[ERR]: Failed to download file: {e}")
 
