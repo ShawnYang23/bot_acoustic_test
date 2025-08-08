@@ -146,6 +146,11 @@ class AudioModule:
         if 'speaker' in dev_type.lower():
            command = f"aplay -D {self.device} --dump-hw-params /dev/zero"
         elif 'mic' in dev_type.lower():
+            # free device vibemicarray from vibe-dsp-server
+           if self.device == "hw:vibemicarray,0":
+                self.ssh_client.execute_command("stop vibe-dsp-server")
+           elif self.device == "hw:Loopback,0":
+                self.ssh_client.execute_command("vibe-dsp-client -c start")
            command = f"arecord -D {self.device} --dump-hw-params /dev/zero"
         else:
             print(f"[ERR]: Unsupported device type: {dev_type}")
@@ -357,13 +362,11 @@ class AudioModule:
         
         # device vibemicarray has conflict with device Loopback,0 because of vibe-dsp-server
         if self.device == "hw:vibemicarray,0":
-            self.ssh_client.execute_command("stop vibe-dsp-server") 
             output = self.ssh_client.execute_command(command)
             self.ssh_client.execute_command("start vibe-dsp-server")
         elif self.device == "hw:Loopback,0":
-            self.ssh_client.execute_command("vibe-dsp-client -c start") 
             output = self.ssh_client.execute_command(command)
-            self.ssh_client.execute_command("vibe-dsp-client -c stop")
+            self.ssh_client.execute_command("vibe-dsp-client -c start")
         else:
             output = self.ssh_client.execute_command(command)
 
