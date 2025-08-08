@@ -5,7 +5,7 @@ import re
 import wave
 
 class AudioModule:
-    def __init__(self, ssh_client: SSHClient):
+    def __init__(self):
         self.ssh_client = None
         self.remote_play_dir = "/root/plays/"
         self.remote_rec_dir = "/root/records/"

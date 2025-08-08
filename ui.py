@@ -15,13 +15,21 @@ from ssh_client import SSHClient
 from audio_module import AudioModule
 from audio_analyzer import AudioAnalyzer
 import shutil
-import paramiko
-import stat
 
 
 class RemoteHostApp:
     def __init__(self, root):
-         # Default configuration file
+        # Default configuration file
+        platform_name = sys.platform
+        if platform_name.startswith("win"):
+            print("[INFO]: Platform Windows")
+        elif platform_name.startswith("linux"):
+            print("[INFO]: Platform Linux")
+        else:
+            print("[INFO]: Unknown platform:", platform_name)
+            sys.exit(1)
+
+        self.platform = platform_name
         self.config_file = "ui_config.ini"
         self.load_config()
 
@@ -287,7 +295,7 @@ class RemoteHostApp:
 
         # Sync file button
         self.sync_mode_var = tk.StringVar(value="merge")
-        mode_list = ["merge", "local", "remote"]
+        mode_list = ["merge", "upload", "download"]
         self.sync_mode_combobox = ttk.Combobox(ssh_frame, textvariable=self.sync_mode_var,
                                                 values=mode_list, state="readonly")
         self.sync_mode_combobox.grid(row=6, column=0, sticky="ew", padx=5, pady=10)
@@ -985,7 +993,7 @@ class RemoteHostApp:
         self.password = self.password_entry.get()
 
         # Initialize audio module and analyzer
-        self.audio_module = AudioModule(self.ssh_client)
+        self.audio_module = AudioModule()
         self.audio_analyzer = AudioAnalyzer(self.audio_module)
         # Setup local sys
         self.system_setup_local()
@@ -993,7 +1001,7 @@ class RemoteHostApp:
 
         try:
             self.ssh_client = SSHClient(
-                self.hostname, self.username, self.password)
+                self.hostname, self.username, self.password, self.platform)
             if not self.ssh_client.connect():
                 raise Exception("SSH connection failed")
 
@@ -1605,32 +1613,23 @@ class RemoteHostApp:
             "records": "/root/records/"
         }
 
-        if mode == "local":
+        if mode == "upload":
             result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite remote files.")
             if not result:
                 print("[INFO]: Sync operation cancelled by user")
                 return False
-            for key in local_dirs:
-                print(f"[sync]: Uploading {key}...")
-                self.ssh_client.upload_file(local_dirs[key], remote_dirs[key])
+            self.ssh_client.sync_files(local_dirs, remote_dirs, mode)
 
-        elif mode == "remote":
+        elif mode == "download":
             result = messagebox.askyesno("Confirm", "Do you want to sync remote files to local? This might overwrite local files.")
             if not result:
                 print("[INFO]: Sync operation cancelled by user")
                 return False
-            for key in local_dirs:
-                print(f"[sync]: Downloading {key}...")
-                self.ssh_client.download_file(remote_dirs[key], local_dirs[key])
+            self.ssh_client.sync_files(remote_dirs, local_dirs, mode)
 
         else:  # merge
             print("[sync]: Merging local → remote → local...")
-            for key in local_dirs:
-                print(f"[sync]: Uploading {key}...")
-                self.ssh_client.upload_file(local_dirs[key], remote_dirs[key])
-            for key in local_dirs:
-                print(f"[sync]: Downloading {key}...")
-                self.ssh_client.download_file(remote_dirs[key], local_dirs[key])
+            self.ssh_client.sync_files(local_dirs, remote_dirs, mode="merge")
 
         print(f"[sync]: Synchronization completed successfully, mode: {mode}")
         return True

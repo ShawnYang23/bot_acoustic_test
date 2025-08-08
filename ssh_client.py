@@ -6,13 +6,15 @@ import shlex
 
 
 class SSHClient:
-    def __init__(self, hostname, username, password):
+    def __init__(self, hostname, username, password, platform="Linux"):
         self.hostname = hostname
         self.username = username
         self.password = password
         self.client = None
         self.ssh_transport = None
         self.scp_client = None
+        self.platform = platform
+        self.fastboot = True
 
     def connect(self):
         """
@@ -106,6 +108,56 @@ class SSHClient:
             return output
         except Exception as e:
             print(f"[ERR]: Failed to execute command: {e}")
+            return None
+        
+    def sync_files(self, local_path, remote_path, mode="merge"):
+        """
+        Synchronize a local folder with a remote folder using rsync.
+        Only support Linux platform
+        """
+        try:
+            if self.is_connected():
+                print(f"[sync]: Syncing {local_path} with {remote_path} in {mode} mode on {self.platform}...")
+                if "linux" in self.platform:
+                    if mode == "merge":
+                        command = f"rsync -avz {local_path} {self.username}@{self.hostname}:{remote_path}"
+                        self.execute_command(command)
+                        command = f"rsync -avz {self.username}@{self.hostname}:{remote_path} {local_path}"
+                    elif mode == "upload":
+                        command = f"rsync -avz --delete {local_path} {self.username}@{self.hostname}:{remote_path}"
+                    elif mode == "download":
+                        command = f"rsync -avz --delete {self.username}@{self.hostname}:{remote_path} {local_path}"
+                    else:
+                        print("[ERR]: Invalid sync mode.")
+                        return None
+                    return self.execute_command(command)
+                elif "win" in self.platform:
+                    if self.fastboot:
+                        print("[sync]: Using fastboot mode for Windows.")
+                        return
+                    if mode == "merge":
+                        for key in local_path:
+                            print(f"[sync]: Uploading {key}...")
+                            self.ssh_client.upload_file(local_path[key], remote_path[key])
+                        for key in local_path:
+                            print(f"[sync]: Downloading {key}...")
+                            self.ssh_client.download_file(remote_path[key], local_path[key])
+                    elif mode == "upload":
+                        for key in local_path:
+                            print(f"[sync]: Uploading {key}...")
+                            self.ssh_client.upload_file(local_path[key], remote_path[key])
+                    elif mode == "download":
+                        for key in local_path:
+                            print(f"[sync]: Downloading {key}...")
+                            self.ssh_client.download_file(remote_path[key], local_path[key])
+                    else:
+                        print("[ERR]: Invalid sync mode.")
+                return
+            else:
+                print("[ERR]: SSH client is not connected.")
+                return None
+        except Exception as e:
+            print(f"[ERR]: Failed to rsync folder: {e}")
             return None
 
     def upload_file(self, local_path, remote_path):
