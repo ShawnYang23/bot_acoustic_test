@@ -2,8 +2,7 @@ import paramiko
 import os
 from scp import SCPClient
 import shlex
-
-
+import re
 
 class SSHClient:
     def __init__(self, hostname, username, password, platform="Linux"):
@@ -93,6 +92,9 @@ class SSHClient:
                 if output:
                     print(f"[OUT]: {output}")
                 if error:
+                    # if error > 10 lines only show first and last 5 lines, middle lines are hidden with "..."
+                    if len(error.splitlines()) > 10:
+                        error = "\n".join(error.splitlines()[:5]) + "\n... hidden ..." + "\n" + "\n".join(error.splitlines()[-5:])
                     print(f"[ERR]: {error}")
             if force:
                 return output
@@ -267,34 +269,36 @@ class SSHClient:
         try:
             remote_dir = os.path.dirname(remote_path)
             keyword = os.path.basename(remote_path)
+            if "win" in self.platform:
+                remote_dir = remote_dir.replace("\\", "/")
+                keyword = keyword.replace("\\", "/")
 
-            if file_type == ".wav":
-                command = (
-                    f"find {shlex.quote(remote_dir)} -maxdepth 1 "
-                    f"\\( -type f -name '*.wav' -o -type d \\) "
-                    f"-exec sh -c 'if [ -d \"$1\" ]; then echo \"$1/\"; else echo \"$1\"; fi' sh {{}} \\;"
-                )
-
-            elif file_type == "dir":
-                command = f"find {shlex.quote(remote_dir)} -mindepth 1 -maxdepth 1 -type d -exec printf '%s/\\n' {{}} \\;"
-
-            else:
+            if file_type == "all":
                 command = (
                     f"ls -1 {shlex.quote(remote_dir)} | "
                     f"while read f; do "
                     f"if [ -d \"{remote_dir}/$f\" ]; then echo \"$f/\"; else echo \"$f\"; fi; "
                     f"done"
                 )
+            elif file_type == "dir":
+                command = f"find {shlex.quote(remote_dir)} -mindepth 1 -maxdepth 1 -type d -exec printf '%s/\\n' {{}} \\;"
 
+            else:
+                command = (
+                    f"find {shlex.quote(remote_dir)} -maxdepth 1 "
+                    f"\\( -type f -name '*.wav' -o -type d \\) "
+                    f"-exec sh -c 'if [ -d \"$1\" ]; then echo \"$1/\"; else echo \"$1\"; fi' sh {{}} \\;"
+                )
 
             output = self.execute_command(command)
             if output:
                 file_list = output.split()
                 for i in range(len(file_list)):
                     file_list[i] = os.path.join(remote_dir, file_list[i])
+                if "win" in self.platform:
+                    file_list = [f.replace("/", "\\") for f in file_list]
                 if keyword:
                     file_list = [f for f in file_list if keyword in f]
-                file_list = [f + os.path.sep if os.path.isdir(f) else f for f in file_list]
                 return file_list
             else:
                 print(f"[ERR]: No files found in directory {remote_dir}.")

@@ -3,6 +3,8 @@ import re
 import os
 import numpy as np
 import wave
+import matplotlib
+matplotlib.use('Agg')  # cancel plot warnings in non-GUI environments
 import matplotlib.pyplot as plt
 import soundfile as sf
 from pesq_score import PesqScore
@@ -15,6 +17,7 @@ class AudioAnalyzer:
         self.ssh_client = None
         self.pesq_analyzer = PesqScore()  
         self.default_analyze_sec = 10 # Default analyze duration in seconds
+        self.cache_on = False
 
     def set_ssh_connect(self, ssh_client: SSHClient):
         """
@@ -24,10 +27,11 @@ class AudioAnalyzer:
             print("[ERR]: SSH client is not connected.")
         self.ssh_client = ssh_client
     
-    def audio_analyzing(self, ref_audio:str , target_audio: str, method: str = "PESQ"):
+    def audio_analyzing(self, ref_audio:str , target_audio: str, method: str = "PESQ", cache: bool = False):
         """
         Analyze the audio file and return its properties.
         """
+        self.cache_on = cache
         if not os.path.exists(target_audio):
             print(f"[ERR]: Target Audio file {target_audio} does not exist.")
             return False
@@ -90,7 +94,8 @@ class AudioAnalyzer:
         src_base_name = os.path.basename(src_audio)
         # Check if the SSL file already exists locally
         local_ssl_file_name = f"./cache/ssl_{src_base_name}"
-        if os.path.exists(local_ssl_file_name):
+        local_odas_file_name = f"./cache/odas_{src_base_name}"
+        if os.path.exists(local_ssl_file_name) and self.cache_on:
             print(f"[INFO]: SSL file {local_ssl_file_name} already exists. Skipping analysis.")
             return self.doa_file_analyzing(local_ssl_file_name)
         
@@ -106,7 +111,7 @@ class AudioAnalyzer:
             if not self.ssh_client.file_exists(remote_config_file_path):
                 print(f"[ERR]: Configuration file {remote_config_file_path} does not exist on the remote server.")
                 return False
-            if not self.ssh_client.file_exists(remote_config_file_test_path):
+            if not self.ssh_client.file_exists(remote_config_file_test_path) and self.cache_on:
                 # Download the configuration file from the remote server
                 config_file_path = "/tmp/cras_audio_bot.cfg"
                 self.ssh_client.download_file(remote_config_file_path, config_file_path)
@@ -114,11 +119,8 @@ class AudioAnalyzer:
                 with open(config_file_path, 'r') as file:
                     config = file.read()
                 config = re.sub(r'enable_recorder\s*=\s*0\s*;', 'enable_recorder = 1;', config)
-                config = re.sub(
-                    r'position:\s*\([^\)]*\);',
-                    'position: ("ssl");',
-                    config
-                )
+                config = re.sub(r'position:\s*\([^\)]*\);', 'position: ("ssl");', config)
+                config = re.sub(r'file_path:\s*\"[^\"]*\";', 'file_path: "/tmp/test";', config)
                 with open(config_file_path, 'w') as file:
                     file.write(config)
                 # Upload the modified configuration file back to the remote server
@@ -134,12 +136,14 @@ class AudioAnalyzer:
                 print(f"[ERR]: cras_api_file_test command failed for {remote_audio_path}. Output: {output}")
                 return False
             # Download the ssl test file to local
-            remote_ssl_file_path = self.ssh_client.execute_command(f"ls /tmp/*ssl_.wav | head -n 1") 
+            remote_ssl_file_path = self.ssh_client.execute_command(f"ls /tmp/*test*ssl_.wav -t | head -n 1") 
             if not remote_ssl_file_path:
                 print(f"[ERR]: No SSL file found in /tmp after cras_api_file_test.")
                 return False
             
             self.ssh_client.download_file(remote_ssl_file_path, local_ssl_file_name)
+            remote_odas_file_path = "/tmp/cras_api_file_test.wav"
+            self.ssh_client.download_file(remote_odas_file_path, local_odas_file_name)
             print(f"[INFO]: DOA analysis Stage1 completed. SSL file saved at {local_ssl_file_name}.")
             return self.doa_file_analyzing(local_ssl_file_name)
             
@@ -157,7 +161,7 @@ class AudioAnalyzer:
         chns = self.audio_module.channels
         ssl_chn = chns - 1  # Last channel as SSL channel
 
-        if os.path.exists(ssl_channel_file):
+        if os.path.exists(ssl_channel_file) and self.cache_on:
             print(f"[INFO]: SSL channel file {ssl_channel_file} already exists. Skipping extraction.")
             return True
             

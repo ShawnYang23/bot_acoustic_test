@@ -61,6 +61,7 @@ class RemoteHostApp:
         self.def_play_path = self.get_config("Settings", "def_play_path", fallback="./plays/")
         self.remote_root_path = self.get_config("File", "remote_root_path", fallback="/root/")
         self.local_root_path = self.get_config("File", "local_root_path", fallback="./")
+        self._typing_job = None  # For handling typing events
 
         # Audio settings
         self.sampling_rate = self.get_config("Audio", "sampling_rate", fallback="48000")
@@ -181,25 +182,42 @@ class RemoteHostApp:
         value = widget.get()
         self.set_config(section, option, value)
         # print(f"[INFO]: {section}.{option} changed to {value}")
-    
-    def on_widget_change_update(self, widget, is_local=True, file_type="all", *args):
-        """
-        Callback function to handle changes in widget values.
-        Updates the local variable with the new value.
-        """
+        
+    def _update_rec_path(self, widget, local=True, file_type="all"):
         file_path = widget.get()
-        if is_local:
+        if local:
             file_list = self.get_file_name_list(file_path, file_type)
-            if file_list:
-                widget.config(values=file_list)
-                    # widget.set(file_list[0])  # Set the first file as default
         else:
             if self.ssh_client and self.ssh_client.is_connected():
                 file_list = self.ssh_client.get_file_name_list(file_path, file_type)
-                if file_list:
-                    widget.config(values=file_list)
-                    # widget.set(file_list[0])  # Set the first file as default
+                
+        widget.config(values=file_list)
+        widget.event_generate("<Down>")
+        self._typing_job = None
         
+    def on_enter_show_list(self, event, widget, local=True, file_type="all"):
+        """
+        Show the dropdown list when the user presses Enter.
+        """
+        if getattr(self, "_typing_job", None):
+            try:
+                widget.after_cancel(self._typing_job)
+            except Exception:
+                pass
+            self._typing_job = None
+
+        self._update_rec_path(widget, local, file_type)
+        return "break"
+
+    def on_rec_path_typing(self, event, widget, local=True, file_type="all"):
+        """
+        Triggered on key release inside the combobox entry.
+        Dynamically update the dropdown list based on input.
+        """
+        if self._typing_job:
+            widget.after_cancel(self._typing_job)
+
+        self._typing_job = widget.after(1000, lambda: self._update_rec_path(widget, local, file_type))
 
     def get_config(self, section, option, fallback=None):
         """
@@ -423,8 +441,7 @@ class RemoteHostApp:
         self.upload_src_var.trace_add("write", partial(self.on_widget_change_save, self.upload_src_var,
                                                        "File", "local_root_path"))
         self.upload_combobox_src = ttk.Combobox(upload_frame, textvariable=self.upload_src_var)
-        self.upload_src_var.trace_add("write", partial(self.on_widget_change_update, 
-                                                       self.upload_combobox_src))
+        self.upload_combobox_src.bind("<Return>",  lambda event: self.on_enter_show_list(event, self.upload_combobox_src, file_type="all"))
         self.upload_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Upload destination path label and entry
@@ -434,9 +451,7 @@ class RemoteHostApp:
         self.upload_dest_var.trace_add("write", partial(self.on_widget_change_save, self.upload_dest_var,
                                                          "File", "remote_root_path"))
         self.upload_combobox_dest = ttk.Combobox(upload_frame, textvariable=self.upload_dest_var)
-        self.upload_dest_var.trace_add("write", partial(self.on_widget_change_update, 
-                                                        self.upload_combobox_dest,
-                                                        False))
+        self.upload_combobox_dest.bind("<Return>", lambda event: self.on_enter_show_list(event, self.upload_combobox_dest, local=False))
         self.upload_combobox_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
         # Download Frame setup
@@ -462,9 +477,7 @@ class RemoteHostApp:
         self.download_var.trace_add("write", partial(self.on_widget_change_save, self.download_var,
                                                      "File", "remote_root_path"))
         self.download_combobox_src = ttk.Combobox(download_frame, textvariable=self.download_var)
-        self.download_var.trace_add("write", partial(self.on_widget_change_update, 
-                                                    self.download_combobox_src,
-                                                    False))
+        self.download_combobox_src.bind("<Return>", lambda event: self.on_enter_show_list(event, self.download_combobox_src, local=False))
         self.download_combobox_src.grid(row=1, column=1, pady=5, sticky="ew")
 
         # Download destination path label and entry
@@ -474,8 +487,7 @@ class RemoteHostApp:
         self.download_dest_var.trace_add("write", partial(self.on_widget_change_save, self.download_dest_var,
                                                            "File", "local_root_path"))
         self.download_combobox_dest = ttk.Combobox(download_frame, textvariable=self.download_dest_var)
-        self.download_dest_var.trace_add("write", partial(self.on_widget_change_update, 
-                                                          self.download_combobox_dest))
+        self.download_combobox_dest.bind("<Return>", lambda event: self.on_enter_show_list(event, self.download_combobox_dest, local=True))
         self.download_combobox_dest.grid(row=2, column=1, pady=5, sticky="ew")
 
 
@@ -628,7 +640,7 @@ class RemoteHostApp:
         self.rec_path_var.trace_add("write", partial(self.on_widget_change_save, self.rec_path_var,
                                                      "Audio", "rec_path"))
         self.rec_path_combobox = ttk.Combobox(self.record_frame, textvariable=self.rec_path_var)
-        self.rec_path_var.trace_add("write", partial(self.on_widget_change_update, self.rec_path_combobox, True, ".wav"))
+        self.rec_path_combobox.bind("<Return>", lambda event: self.on_enter_show_list(event, self.rec_path_combobox, file_type=".wav"))
         self.rec_path_combobox.grid(row=2, column=1, columnspan=5, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Player
@@ -686,7 +698,7 @@ class RemoteHostApp:
         self.play_path_var.trace_add("write", partial(self.on_widget_change_save, self.play_path_var,
                                                              "Audio", "play_path"))
         self.play_path_combobox = ttk.Combobox(self.play_frame, textvariable=self.play_path_var)
-        self.play_path_var.trace_add("write", partial(self.on_widget_change_update, self.play_path_combobox, True, ".wav"))
+        self.play_path_combobox.bind("<Return>", lambda event: self.on_enter_show_list(event, self.play_path_combobox, file_type=".wav"))
         self.play_path_combobox.grid(row=2, column=1, columnspan=5, padx=5, pady=5, sticky="nsew")
 
         ## Frame-Analyzer        
@@ -697,20 +709,31 @@ class RemoteHostApp:
             self.analysis_frame.grid_columnconfigure(i, weight=1)
         self.analysis_frame.grid_columnconfigure(1, weight=3)
 
+        # analysis method choosing
         self.analysis_label = tk.Label(self.analysis_frame, text="Analysis Menu:")
         self.analysis_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA"]
+        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA", "ODAS"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         self.analysis_progress = ttk.Progressbar(self.analysis_frame, orient="horizontal", length=400, mode="determinate")
         self.analysis_progress.grid(row=1, column=0, columnspan=5, padx=5, pady=(0, 10), sticky="nsew")
         self.analysis_progress_running = False
+        
+        # cache checkout
+        self.use_cache_var = tk.BooleanVar(value=False)
+        self.use_cache_check = ttk.Checkbutton(
+            self.analysis_frame,
+            text="cache on",
+            variable=self.use_cache_var
+        )
+        self.use_cache_check.grid(row=1, column=5, padx=5, pady=5, sticky="ew")
 
+        # reference audio
         ref_label = tk.Label(self.analysis_frame, text="Reference Audio:")
         ref_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
@@ -718,9 +741,10 @@ class RemoteHostApp:
         self.ref_audio_var.trace_add("write", partial(self.on_widget_change_save, self.ref_audio_var,
                                                      "Analyser", "ref_audio"))
         self.ref_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.ref_audio_var)
-        self.ref_audio_var.trace_add("write", partial(self.on_widget_change_update, self.ref_audio_combobox, True, ".wav"))
+        self.ref_audio_combobox.bind("<Return>", lambda event: self.on_enter_show_list(event, self.ref_audio_combobox, file_type=".wav"))
         self.ref_audio_combobox.grid(row=2, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
 
+        # target audio
         target_label = tk.Label(self.analysis_frame, text="Target Audio:")
         target_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         
@@ -728,7 +752,7 @@ class RemoteHostApp:
         self.target_audio_var.trace_add("write", partial(self.on_widget_change_save, self.target_audio_var,
                                                      "Analyser", "target_audio"))
         self.target_audio_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.target_audio_var)
-        self.target_audio_var.trace_add("write", partial(self.on_widget_change_update, self.target_audio_combobox, True, ".wav"))
+        self.target_audio_combobox.bind("<Return>", lambda event: self.on_enter_show_list(event, self.target_audio_combobox, file_type=".wav"))
         self.target_audio_combobox.grid(row=3, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
 
         # Analysis run button
@@ -1435,6 +1459,7 @@ class RemoteHostApp:
         def task():
             start_time = time.time()
             self.analysis_method = self.analysis_method_combobox.get()
+            cache_on = self.use_cache_var.get()
             ref_audio = self.ref_audio_combobox.get()
             target_audio = self.target_audio_combobox.get()
             if not os.path.exists(target_audio):
@@ -1466,7 +1491,7 @@ class RemoteHostApp:
             self.analysis_start_time = time.time()
             self.analysis_progress.after(0, update_analyse_progress)
             # Perform the audio analysis
-            result = self.audio_analyzer.audio_analyzing(method=self.analysis_method, ref_audio=ref_audio, target_audio=target_audio)
+            result = self.audio_analyzer.audio_analyzing(method=self.analysis_method, ref_audio=ref_audio, target_audio=target_audio, cache=cache_on)
 
             def on_finish():
                 self.analysis_progress_running = False
