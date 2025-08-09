@@ -312,7 +312,7 @@ class RemoteHostApp:
         clear_cache_button.grid(row=5, column=1, sticky="ew", padx=5, pady=10)
 
         # Sync file button
-        self.sync_mode_var = tk.StringVar(value="merge")
+        self.sync_mode_var = tk.StringVar(value="upload")
         mode_list = ["merge", "upload", "download"]
         self.sync_mode_combobox = ttk.Combobox(ssh_frame, textvariable=self.sync_mode_var,
                                                 values=mode_list, state="readonly")
@@ -716,7 +716,7 @@ class RemoteHostApp:
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA", "ODAS"]
+        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
@@ -1033,7 +1033,7 @@ class RemoteHostApp:
                 "Status: Connected"), fg="green")
             # Reset remote sever
             self.system_setup_remote()
-            self.sync_files(force=True, mode="merge")
+            self.sync_files(force=True, mode="upload")
             self.update_remote_menu()
             # Connect module to SSH client
             self.audio_module.set_ssh_connect(self.ssh_client)
@@ -1163,7 +1163,7 @@ class RemoteHostApp:
             self.audio_recorder_thread()
 
     
-    def update_progress(self, elapsed, total, progress_bar=None):
+    def update_progress_time(self, elapsed, total, progress_bar=None):
         if progress_bar is None:
             messagebox.showerror(self.get_text("Error"),
                                  self.get_text("Progress bar not initialized"))
@@ -1232,7 +1232,7 @@ class RemoteHostApp:
                 if not self.rec_progress_running:
                     return
                 elapsed = time.time() - start_time
-                self.update_progress(elapsed, total_sec, self.record_progress)
+                self.update_progress_time(elapsed, total_sec, self.record_progress)
                 
                 if elapsed >= total_sec:
                     self.rec_progress_running = False
@@ -1321,7 +1321,7 @@ class RemoteHostApp:
                 if not self.play_progress_running:
                     return
                 elapsed = time.time() - start_time
-                self.update_progress(elapsed, total_sec, self.play_progress)
+                self.update_progress_time(elapsed, total_sec, self.play_progress)
                 
                 if elapsed >= total_sec:
                     print(f"[INFO]: Playback duration total reached: {elapsed:.2f} sec")
@@ -1456,7 +1456,34 @@ class RemoteHostApp:
             self.audio_analyzer_thread()
 
     def audio_analyzer_thread(self):
+        """
+        Thread for running audio analysis.
+        """
         def task():
+            def update_progress_bar(start_time, total_sec):
+                if not self.analysis_progress_running:
+                    return
+                update_frequency_ms = 200  # Update every 200 ms
+                elapsed = time.time() - start_time
+                self.update_progress_time(elapsed, total_sec, self.analysis_progress)
+                if elapsed >= total_sec:
+                    self.analysis_progress_running = False
+                    self.analysis_progress['value'] = 100
+                    return
+                self.analysis_progress.after(update_frequency_ms, lambda: update_progress_bar(start_time, total_sec))
+                
+            def on_finish(result):
+                self.analysis_progress_running = False
+                self.analysis_progress.stop()
+                if result is True:
+                    print("[INFO]: Audio analysis completed successfully") 
+                    messagebox.showinfo(self.get_text("Success"), self.get_text(f"Audio analysis {self.analysis_method} completed successfully"))
+                else:
+                    print("[ERR]: Audio analysis failed") 
+                    messagebox.showerror(self.get_text("Error"), self.get_text(f"Audio analysis {self.analysis_method} failed"))
+                self.analysis_button.config(text=self.get_text("Run Analysis"))
+
+            # Get analysis parameters
             start_time = time.time()
             self.analysis_method = self.analysis_method_combobox.get()
             cache_on = self.use_cache_var.get()
@@ -1475,35 +1502,16 @@ class RemoteHostApp:
                 total_sec = int(wav_info['duration']) + 1  # Add 1 second buffer to avoid rounding issues
             print(f"[INFO]: Starting audio analysis with method: {self.analysis_method}, reference audio: {ref_audio}, target audio: {target_audio}, total duration: {total_sec} sec")
             
-            def update_analyse_progress():
-                if not self.analysis_progress_running:
-                    return
-                update_frequency_ms = 200  # Update every 200 ms
-                elapsed = time.time() - start_time
-                self.update_progress(elapsed, total_sec, self.analysis_progress)
-                if elapsed >= total_sec:
-                    self.analysis_progress_running = False
-                    self.analysis_progress['value'] = 100
-                    return
-                self.analysis_progress.after(update_frequency_ms, update_analyse_progress)
-            # Start the progress bar
+            # Start the progress bar UI
             self.analysis_progress_running = True
             self.analysis_start_time = time.time()
-            self.analysis_progress.after(0, update_analyse_progress)
+            self.analysis_progress.after(0, lambda: update_progress_bar(start_time, total_sec))
+            
             # Perform the audio analysis
             result = self.audio_analyzer.audio_analyzing(method=self.analysis_method, ref_audio=ref_audio, target_audio=target_audio, cache=cache_on)
 
-            def on_finish():
-                self.analysis_progress_running = False
-                self.analysis_progress.stop()
-                if result is True:
-                    print("[INFO]: Audio analysis completed successfully") 
-                    messagebox.showinfo(self.get_text("Success"), self.get_text(f"Audio analysis {self.analysis_method} completed successfully"))
-                else:
-                    print("[ERR]: Audio analysis failed") 
-                    messagebox.showerror(self.get_text("Error"), self.get_text(f"Audio analysis {self.analysis_method} failed"))
-                self.analysis_button.config(text=self.get_text("Run Analysis"))
-            self.analysis_progress.after(0, on_finish)
+            # Update the UI when the analysis is complete
+            self.analysis_progress.after(0, lambda: on_finish(result))
             
         # Run the analysis task in a separate thread to avoid blocking the UI
         print("[INFO]: Starting audio analysis thread...")
