@@ -18,6 +18,9 @@ class AudioAnalyzer:
         self.pesq_analyzer = PesqScore()  
         self.default_analyze_sec = 10 # Default analyze duration in seconds
         self.cache_on = False
+        self.local_cras_config_path = "./cras/cras_audio_bot_test.cfg"
+        self.remote_cras_config_path = "/etc/vibe/dsp/cras_audio_bot.cfg"
+        self.test_remote_cras_config_path = "/tmp/cras_audio_bot_test.cfg"
 
     def set_ssh_connect(self, ssh_client: SSHClient):
         """
@@ -80,16 +83,83 @@ class AudioAnalyzer:
         elif method == "Spectrum":
             print(f"[INFO]: Analyzing audio file {target_audio} with Spectrum Analysis.")
             return self.spectrum_analyzing(target_audio)
+        elif method == "ODAS":
+            print(f"[INFO]: Analyzing audio file {target_audio} with ODAS.")
+            return self.odas_analyzing(target_audio)
         else:
             print(f"[ERR]: Unsupported analysis method: {method}")
             return None
         
+    def odas_analyzing(self, src_audio):
+        """
+        Analyze the given audio file for omnidirectional audio source (ODAS).
+        """
+        if not self.ssh_client.is_connected():
+            print("[ERR]: SSH client is not connected.")
+            return False
+
+        if not os.path.exists(self.local_cras_config_path):
+            print(f"[ERR]: Local configuration file {self.local_cras_config_path} does not exist.")
+            return False
+        
+        src_base_name = os.path.basename(src_audio)
+        remote_audio_path, local_audio_path = self.audio_module.check_and_sync_file(src_audio)
+        if remote_audio_path is None:
+            print(f"[ERR]: Audio file {src_base_name} does not exist on the remote server.")
+            return False
+        
+        try:
+            if not self.ssh_client.file_exists(self.remote_cras_config_path):
+                print(f"[ERR]: Configuration file {self.remote_cras_config_path} does not exist on the remote server.")
+                return False
+            if not self.ssh_client.file_exists(self.test_remote_cras_config_path) or not self.cache_on:
+                # Modify the configuration file to enable recorder and set position to "ssl"
+                with open(self.local_cras_config_path, 'r') as file:
+                    config = file.read()
+                config = re.sub(r'enable_recorder\s*=\s*0\s*;', 'enable_recorder = 1;', config)
+                config = re.sub(r'file_path:\s*\"[^\"]*\";', 'file_path: "/tmp/test";', config)
+                with open(self.local_cras_config_path, 'w') as file:
+                    file.write(config)
+                # Upload the modified configuration file back to the remote server
+                self.ssh_client.upload_file(self.local_cras_config_path, self.test_remote_cras_config_path)
+            
+            #TODO check wav file format
+            # Analyze the audio file using cras_api_file_test
+            self.ssh_client.execute_command("stop vibe-dsp-server && rm -rf /tmp/*.wav")
+            print(f"[INFO]: Analyzing audio file {remote_audio_path} for ODAS.")
+            command = f"cras_api_file_test -c {self.test_remote_cras_config_path} -i {remote_audio_path} -o /tmp/cras_api_file_test_sink.wav"
+            output = self.ssh_client.execute_command(command, force=True, verbose=True)
+            self.ssh_client.execute_command("start vibe-dsp-server")
+            if output is None or "Error" in output:
+                print(f"[ERR]: cras_api_file_test command failed for {remote_audio_path}. Output: {output}")
+                return False
+            # Download the test file to local
+            remote_file_paths = self.ssh_client.execute_command(f"ls /tmp/*test*.wav -t") 
+            if not remote_file_paths:
+                print(f"[ERR]: No recorded file found in /tmp after cras_api_file_test.")
+                return False
+            # sort remote_file_paths as list
+            file_list = remote_file_paths.splitlines()
+            for path in file_list:
+                local_file_name = f"./cache/{os.path.basename(path)}"
+                self.ssh_client.download_file(path, local_file_name)
+                print(f"[INFO]: ODAS analysis completed. Save file {local_file_name}.")
+            return True
+
+        except Exception as e:
+            print(f"[ERR]: Failed to analyze audio file {src_audio}: {e}")
+            return False
+           
     def doa_analyzing(self, src_audio):
         """
         Analyze the given audio file for direction of arrival (DOA).
         """
         if not self.ssh_client.is_connected():
             print("[ERR]: SSH client is not connected.")
+            return False
+        
+        if not os.path.exists(self.local_cras_config_path):
+            print(f"[ERR]: Local configuration file {self.local_cras_config_path} does not exist.")
             return False
         src_base_name = os.path.basename(src_audio)
         # Check if the SSL file already exists locally
@@ -106,32 +176,29 @@ class AudioAnalyzer:
             return False
         
         try:
-            remote_config_file_path = "/etc/vibe/dsp/cras_audio_bot.cfg"
-            remote_config_file_test_path = "/tmp/cras_audio_bot_test.cfg"
-            if not self.ssh_client.file_exists(remote_config_file_path):
-                print(f"[ERR]: Configuration file {remote_config_file_path} does not exist on the remote server.")
+            if not self.ssh_client.file_exists(self.remote_cras_config_path):
+                print(f"[ERR]: Configuration file {self.remote_cras_config_path} does not exist on the remote server.")
                 return False
-            if not self.ssh_client.file_exists(remote_config_file_test_path) and self.cache_on:
-                # Download the configuration file from the remote server
-                config_file_path = "/tmp/cras_audio_bot.cfg"
-                self.ssh_client.download_file(remote_config_file_path, config_file_path)
+            if not self.ssh_client.file_exists(self.test_remote_cras_config_path) or not self.cache_on:
                 # Modify the configuration file to enable recorder and set position to "ssl"
-                with open(config_file_path, 'r') as file:
+                with open(self.local_cras_config_path, 'r') as file:
                     config = file.read()
                 config = re.sub(r'enable_recorder\s*=\s*0\s*;', 'enable_recorder = 1;', config)
                 config = re.sub(r'position:\s*\([^\)]*\);', 'position: ("ssl");', config)
                 config = re.sub(r'file_path:\s*\"[^\"]*\";', 'file_path: "/tmp/test";', config)
-                with open(config_file_path, 'w') as file:
+                with open(self.local_cras_config_path, 'w') as file:
                     file.write(config)
                 # Upload the modified configuration file back to the remote server
-                self.ssh_client.upload_file(config_file_path, remote_config_file_test_path)
+                self.ssh_client.upload_file(self.local_cras_config_path, self.test_remote_cras_config_path)
             
             #TODO check wav file format
             # Analyze the audio file using cras_api_file_test
-            self.ssh_client.execute_command("rm -rf /tmp/*ssl_.wav && restart vibe-dsp-server")  # Clean up any previous test output
+            remote_odas_file_path = "/tmp/cras_api_file_test_sink.wav"
+            self.ssh_client.execute_command("stop vibe-dsp-server && rm -rf /tmp/*ssl_.wav")  # Clean up any previous test output
             print(f"[INFO]: Analyzing audio file {remote_audio_path} for DOA.")
-            command = f"cras_api_file_test -c {remote_config_file_test_path} -i {remote_audio_path} -o /tmp/cras_api_file_test.wav"
+            command = f"cras_api_file_test -c {self.test_remote_cras_config_path} -i {remote_audio_path} -o {remote_odas_file_path}"
             output = self.ssh_client.execute_command(command, force=True, verbose=True)
+            self.ssh_client.execute_command("start vibe-dsp-server")  # Restart the server after test
             if output is None or "Error" in output:
                 print(f"[ERR]: cras_api_file_test command failed for {remote_audio_path}. Output: {output}")
                 return False
@@ -142,7 +209,6 @@ class AudioAnalyzer:
                 return False
             
             self.ssh_client.download_file(remote_ssl_file_path, local_ssl_file_name)
-            remote_odas_file_path = "/tmp/cras_api_file_test.wav"
             self.ssh_client.download_file(remote_odas_file_path, local_odas_file_name)
             print(f"[INFO]: DOA analysis Stage1 completed. SSL file saved at {local_ssl_file_name}.")
             return self.doa_file_analyzing(local_ssl_file_name)

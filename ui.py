@@ -716,7 +716,7 @@ class RemoteHostApp:
         self.analysis_method_var = tk.StringVar(value=self.analysis_method)
         self.analysis_method_var.trace_add("write", partial(self.on_widget_change_save, self.analysis_method_var,
                                                              "Analyser", "method"))
-        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA"]
+        methods = ["PESQ", "SNR", "ANR", "AEC", "Spectrum", "DOA", "ODAS"]
         self.analysis_method_combobox = ttk.Combobox(self.analysis_frame, textvariable=self.analysis_method_var, values=methods, state="readonly")
         self.analysis_method_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
@@ -1645,7 +1645,7 @@ class RemoteHostApp:
             "plays": "/root/plays/",
             "records": "/root/records/"
         }
-
+        # Sync play and record directories
         if mode == "upload":
             result = messagebox.askyesno("Confirm", "Do you want to sync local files to remote? This might overwrite remote files.")
             if not result:
@@ -1663,6 +1663,9 @@ class RemoteHostApp:
         else:  # merge
             print("[sync]: Merging local → remote → local...")
             self.ssh_client.sync_files(local_dirs, remote_dirs, mode="merge")
+
+        # Sync cras configuration files
+        self.ssh_client.download_file(f"{self.audio_analyzer.test_remote_cras_config_path}", f"{self.audio_analyzer.local_cras_config_path}")
 
         print(f"[sync]: Synchronization completed successfully, mode: {mode}")
         return True
